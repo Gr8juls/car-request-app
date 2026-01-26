@@ -1,0 +1,12 @@
+.App {
+    text-align: center;
+}
+
+.card {
+    margin-top: 20px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.navbar-brand {
+    font-weight: bold;
+}
