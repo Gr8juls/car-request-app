@@ -27,6 +27,9 @@ exports.createRequest = async (req, res) => {
             } else if (manager_level === 'department') {
                 // Department Head's request bypasses both Line Manager and Dept Head approval
                 status = 'approved_by_dept_head';
+            } else if (manager_level === 'operation') {
+                // Operation Manager's request bypasses lower levels
+                status = 'approved_by_ops_manager';
             }
         }
 
@@ -111,6 +114,22 @@ exports.getRequests = async (req, res) => {
                     ORDER BY r.created_at DESC
                 `;
                 params = [department_id];
+            } else if (manager_level === 'operation') {
+                // Operation Manager sees requests that have passed Department Head approval
+                // Showing all requests that are 'approved_by_dept_head' (needing their action)
+                // or 'approved_by_ops_manager' (approved by them) or 'approved_by_hc' (completed)
+                // that originated from managers (who follow this path).
+                // Assuming they want to see the queue.
+                query = `
+                    SELECT r.*, u.full_name, u.manager_level as requester_manager_level
+                    FROM car_requests r 
+                    JOIN users u ON r.user_id = u.id 
+                    WHERE r.status IN ('approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_hc')
+                    AND u.manager_level != 'none' 
+                    ORDER BY r.created_at DESC
+                `;
+                // Filter: u.manager_level != 'none' ensures we only see the Manager->DH->Ops path requests
+                params = [];
             } else {
                 // Fallback for employee with manager_level none (their own only)
                 query = 'SELECT r.*, u.full_name, u.manager_level as requester_manager_level FROM car_requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = ? ORDER BY r.created_at DESC';
@@ -198,7 +217,8 @@ exports.updateStatus = async (req, res) => {
 
             if (status === 'approved_by_hc') {
                 const isEmployeePathOk = (currentRequest.requester_manager_level === 'none' && (currentStatus === 'approved_by_line_manager' || currentStatus === 'pending'));
-                const isManagerPathOk = (currentRequest.requester_manager_level !== 'none' && currentStatus === 'approved_by_dept_head');
+                // Manager path now requires Ops Manager approval
+                const isManagerPathOk = (currentRequest.requester_manager_level !== 'none' && currentStatus === 'approved_by_ops_manager');
 
                 if (!isEmployeePathOk && !isManagerPathOk && currentStatus !== 'approved_by_hc') {
                     return res.status(400).json({ message: 'Request must follow the approved workflow path' });
@@ -233,6 +253,17 @@ exports.updateStatus = async (req, res) => {
             if (status === 'approved_by_dept_head') {
                 if (currentStatus !== 'approved_by_line_manager' || currentRequest.requester_manager_level === 'none') {
                     return res.status(400).json({ message: 'Request does not require Manager of Managers approval' });
+                }
+            }
+            updateQuery += ', manager_comment = ? WHERE id = ?';
+            params.push(comment, requestId);
+        } else if (approver.manager_level === 'operation') {
+            // Operation Manager
+
+            // Only approves requests that are 'approved_by_dept_head'
+            if (status === 'approved_by_ops_manager') {
+                if (currentStatus !== 'approved_by_dept_head') {
+                    return res.status(400).json({ message: 'Request does not require Operation Manager approval yet' });
                 }
             }
             updateQuery += ', manager_comment = ? WHERE id = ?';

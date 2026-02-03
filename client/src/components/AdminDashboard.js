@@ -218,7 +218,7 @@ const AdminDashboard = () => {
                                 {user.role !== 'admin' && (
                                     <>
                                         <Button variant="outline-success" size="sm" className="me-2 mb-1" onClick={() => handlePromoteClick(user)}>
-                                            Allocate Manager
+                                            Allocate Line Manager
                                         </Button>
                                         <Button variant="outline-danger" size="sm" className="mb-1" onClick={() => handleDeleteUserClick(user.id)}>
                                             Delete
@@ -234,10 +234,10 @@ const AdminDashboard = () => {
             {/* Promote / Allocate Manager Modal */}
             <Modal show={showPromoteModal} onHide={() => setShowPromoteModal(false)}>
                 <Modal.Header closeButton>
-                    <Modal.Title>Allocate Manager of Others</Modal.Title>
+                    <Modal.Title>Allocate Line Manager</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    <p>Assign <strong>{selectedUser?.full_name}</strong> as Manager of Others for:</p>
+                    <p>Assign <strong>{selectedUser?.full_name}</strong> as Line Manager for:</p>
                     <Form.Group className="mb-3">
                         <Form.Label>Department</Form.Label>
                         <Form.Select value={selectedDeptForFilter} onChange={handlePromoteDeptChange}>
@@ -294,9 +294,10 @@ const AdminDashboard = () => {
                         <Form.Group className="mb-3">
                             <Form.Label>Manager Level</Form.Label>
                             <Form.Select name="manager_level" value={userFormData.manager_level} onChange={handleUserFormChange}>
-                                <option value="none">None</option>
-                                <option value="sub_department">Manager of Others</option>
-                                <option value="department">Manager of Managers</option>
+                                <option value="none">Employee (None)</option>
+                                <option value="sub_department">Line Manager</option>
+                                <option value="department">Head of Department</option>
+                                <option value="operation">Operation Manager</option>
                             </Form.Select>
                         </Form.Group>
                         <Form.Group className="mb-3">

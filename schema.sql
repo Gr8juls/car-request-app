@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS car_requests (
     time_out TIME,
     date_back DATE NOT NULL,
     time_back TIME,
-    status ENUM('pending', 'approved_by_manager', 'approved_by_hc', 'rejected') DEFAULT 'pending',
+    status ENUM('pending', 'approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_hc', 'rejected') DEFAULT 'pending',
     manager_comment TEXT,
     hr_comment TEXT,
     driver_allocated VARCHAR(100),

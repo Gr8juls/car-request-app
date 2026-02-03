@@ -57,6 +57,8 @@ const Dashboard = ({ user }) => {
                     status = 'approved_by_line_manager';
                 } else if (user.manager_level === 'department') {
                     status = 'approved_by_dept_head';
+                } else if (user.manager_level === 'operation') {
+                    status = 'approved_by_ops_manager';
                 }
             }
 
@@ -72,8 +74,9 @@ const Dashboard = ({ user }) => {
     const getStatusBadge = (status) => {
         switch (status) {
             case 'approved_by_hc': return <Badge bg="success">Final Approved (HC)</Badge>;
-            case 'approved_by_dept_head': return <Badge bg="info">Manager of Managers Approved</Badge>;
-            case 'approved_by_line_manager': return <Badge bg="primary">Manager of Others Approved</Badge>;
+            case 'approved_by_ops_manager': return <Badge bg="info">Operation Manager Approved</Badge>;
+            case 'approved_by_dept_head': return <Badge bg="primary">Head of Department Approved</Badge>;
+            case 'approved_by_line_manager': return <Badge bg="secondary">Line Manager Approved</Badge>;
             case 'rejected': return <Badge bg="danger">Rejected</Badge>;
             default: return <Badge bg="warning">Pending</Badge>;
         }
@@ -84,12 +87,17 @@ const Dashboard = ({ user }) => {
             <h2 className="mb-2">Dashboard</h2>
             {user.manager_level === 'sub_department' && (
                 <p className="text-muted small mb-4">
-                    <i className="bi bi-info-circle"></i> Viewing requests from your channel
+                    <i className="bi bi-info-circle"></i> Viewing requests from your channel as Line Manager
                 </p>
             )}
             {user.manager_level === 'department' && (
                 <p className="text-muted small mb-4">
-                    <i className="bi bi-info-circle"></i> Viewing all requests from your entire department (all channels) • You can approve requests after Manager of Others approval
+                    <i className="bi bi-info-circle"></i> Viewing requests from your department as Head of Department
+                </p>
+            )}
+            {user.manager_level === 'operation' && (
+                <p className="text-muted small mb-4">
+                    <i className="bi bi-info-circle"></i> Viewing requests pending Operation Manager approval
                 </p>
             )}
             <Card className="shadow-sm border-0">
@@ -193,36 +201,43 @@ const Dashboard = ({ user }) => {
                             {/* Progress Stepper - Dynamic Path based on user type */}
                             <div className="mb-4 position-relative">
                                 <div className="d-flex justify-content-between mb-2">
-                                    <div className="text-center" style={{ width: '25%' }}>
+                                    <div className="text-center" style={{ width: '20%' }}>
                                         <Badge bg="success" className="rounded-circle p-2 mb-1">1</Badge>
                                         <br />
                                         <small className="fw-bold">Submitted</small>
                                     </div>
-                                    <div className="text-center" style={{ width: '25%' }}>
+                                    <div className="text-center" style={{ width: '20%' }}>
                                         <Badge bg={
-                                            ['approved_by_line_manager', 'approved_by_dept_head', 'approved_by_hc'].includes(requestDetails.status) ? 'success' :
+                                            ['approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_hc'].includes(requestDetails.status) ? 'success' :
                                                 (requestDetails.status === 'rejected' ? 'danger' : 'secondary')
                                         } className="rounded-circle p-2 mb-1">2</Badge>
                                         <br />
-                                        <small className="fw-bold">Manager of Others</small>
+                                        <small className="fw-bold">
+                                            {requestDetails.requester_manager_level === 'none' ? 'Line Manager' : 'Head of Dept'}
+                                        </small>
+                                    </div>
+                                    <div className="text-center" style={{ width: '20%' }}>
+                                        <Badge bg={
+                                            requestDetails.requester_manager_level === 'none' ? (
+                                                ['approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
+                                            ) : (
+                                                ['approved_by_ops_manager', 'approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
+                                            )
+                                        } className="rounded-circle p-2 mb-1">3</Badge>
+                                        <br />
+                                        <small className="fw-bold">
+                                            {requestDetails.requester_manager_level === 'none' ? 'HC Final' : 'Operation Manager'}
+                                        </small>
                                     </div>
                                     {requestDetails.requester_manager_level !== 'none' && (
-                                        <div className="text-center" style={{ width: '25%' }}>
+                                        <div className="text-center" style={{ width: '20%' }}>
                                             <Badge bg={
-                                                ['approved_by_dept_head', 'approved_by_hc'].includes(requestDetails.status) ? 'success' :
-                                                    'secondary'
-                                            } className="rounded-circle p-2 mb-1">3</Badge>
+                                                ['approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
+                                            } className="rounded-circle p-2 mb-1">4</Badge>
                                             <br />
-                                            <small className="fw-bold">Manager of Managers</small>
+                                            <small className="fw-bold">HC Final</small>
                                         </div>
                                     )}
-                                    <div className="text-center" style={{ width: '25%' }}>
-                                        <Badge bg={requestDetails.status === 'approved_by_hc' ? 'success' : 'secondary'} className="rounded-circle p-2 mb-1">
-                                            {requestDetails.requester_manager_level === 'none' ? '3' : '4'}
-                                        </Badge>
-                                        <br />
-                                        <small className="fw-bold">HC Final</small>
-                                    </div>
                                 </div>
                                 <div className="progress" style={{ height: '5px' }}>
                                     <div className={`progress-bar bg-${requestDetails.status === 'rejected' ? 'danger' : 'success'}`} role="progressbar" style={{
@@ -232,9 +247,10 @@ const Dashboard = ({ user }) => {
                                                     requestDetails.status === 'rejected' ? '100%' : '33%'
                                         ) : (
                                             requestDetails.status === 'approved_by_hc' ? '100%' :
-                                                requestDetails.status === 'approved_by_dept_head' ? '75%' :
-                                                    requestDetails.status === 'approved_by_line_manager' ? '50%' :
-                                                        requestDetails.status === 'rejected' ? '100%' : '25%'
+                                                requestDetails.status === 'approved_by_ops_manager' ? '75%' :
+                                                    requestDetails.status === 'approved_by_dept_head' ? '50%' :
+                                                        requestDetails.status === 'approved_by_line_manager' ? '25%' :
+                                                            requestDetails.status === 'rejected' ? '100%' : '25%'
                                         )
                                     }}></div>
                                 </div>
