@@ -11,6 +11,8 @@ import HCDashboard from './components/HCDashboard';
 import AdminDashboard from './components/AdminDashboard';
 
 
+
+import DriverDashboard from './components/DriverDashboard';
 import Dashboard from './components/Dashboard';
 
 function App() {
@@ -46,6 +48,7 @@ function App() {
         if (!user) return <Navigate to="/login" />;
         if (user.role === 'hc' || user.department === 'Human Capital') return <Navigate to="/hc-dashboard" />;
         if (user.role === 'admin') return <Navigate to="/admin-dashboard" />;
+        if (user.role === 'driver') return <Navigate to="/driver-dashboard" />;
         return <Dashboard user={user} />;
     };
 
@@ -61,8 +64,9 @@ function App() {
                         <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/hc-dashboard" element={user && (user.role === 'hc' || user.department === 'Human Capital') ? <HCDashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/admin-dashboard" element={user && user.role === 'admin' ? <AdminDashboard /> : <Navigate to="/login" />} />
+                        <Route path="/driver-dashboard" element={user && user.role === 'driver' ? <DriverDashboard user={user} /> : <Navigate to="/login" />} />
 
-                        <Route path="/" element={<Navigate to={user ? ((user.role === 'hc' || user.department === 'Human Capital') ? "/hc-dashboard" : "/dashboard") : "/login"} />} />
+                        <Route path="/" element={<Navigate to={user ? ((user.role === 'hc' || user.department === 'Human Capital') ? "/hc-dashboard" : (user.role === 'driver' ? "/driver-dashboard" : "/dashboard")) : "/login"} />} />
                     </Routes>
                 </div>
             </div>

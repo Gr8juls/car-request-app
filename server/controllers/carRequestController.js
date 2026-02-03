@@ -57,6 +57,20 @@ exports.getRequests = async (req, res) => {
         let params = [];
         const { status, department, startDate, endDate, sortBy, order } = req.query;
 
+
+        if (req.user.role === 'driver') {
+            query = `
+                SELECT r.*, u.full_name, u.manager_level as requester_manager_level
+                FROM car_requests r 
+                JOIN users u ON r.user_id = u.id 
+                WHERE r.assigned_driver_id = ? 
+                ORDER BY r.created_at DESC
+            `;
+            params = [req.user.id];
+            const [rows] = await db.query(query, params);
+            return res.json(rows);
+        }
+
         if (req.user.role === 'employee' || !req.user.role) {
             // If they are strictly employee (no manager_level), or just checking their own
             // Actually, managers might also want to see their own requests. 
@@ -225,8 +239,8 @@ exports.updateStatus = async (req, res) => {
                 }
             }
 
-            updateQuery += ', hr_comment = ?, driver_allocated = ?, vehicle_allocated = ?, reg_no = ? WHERE id = ?';
-            params.push(comment, driver_allocated, vehicle_allocated, reg_no, requestId);
+            updateQuery += ', hr_comment = ?, driver_allocated = ?, assigned_driver_id = ?, vehicle_allocated = ?, reg_no = ? WHERE id = ?';
+            params.push(comment, driver_allocated, req.body.assigned_driver_id || null, vehicle_allocated, reg_no, requestId);
         } else if (approver.manager_level === 'sub_department') {
             // Line Manager (manages specific people directly)
 

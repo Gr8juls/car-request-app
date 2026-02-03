@@ -5,12 +5,14 @@ import axios from 'axios';
 const HCDashboard = ({ user }) => {
     const [requests, setRequests] = useState([]);
     const [reportData, setReportData] = useState([]);
+    const [drivers, setDrivers] = useState([]);
     const [showModal, setShowModal] = useState(false);
     const [currentRequest, setCurrentRequest] = useState(null);
     const [action, setAction] = useState(''); // 'approve' or 'reject'
     const [comment, setComment] = useState('');
     const [allocation, setAllocation] = useState({
         driver_allocated: '',
+        assigned_driver_id: '',
         vehicle_allocated: '',
         reg_no: ''
     });
@@ -42,6 +44,18 @@ const HCDashboard = ({ user }) => {
             const queryParams = new URLSearchParams(filters).toString();
             const res = await axios.get(`http://localhost:5000/api/cars?${queryParams}`, config);
             setReportData(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const fetchDrivers = async () => {
+        try {
+            // Fetch all users and filter for drivers. 
+            // Note: Uses admin route which is currently public/unprotected in this setup for simplicity.
+            // Ideally should be a dedicated authenticated route.
+            const res = await axios.get('http://localhost:5000/api/admin/users');
+            setDrivers(res.data.filter(u => u.role === 'driver'));
         } catch (err) {
             console.error(err);
         }
@@ -90,6 +104,7 @@ const HCDashboard = ({ user }) => {
     useEffect(() => {
         fetchRequests();
         fetchReport();
+        fetchDrivers();
     }, [user.token, filters]);
 
     const handleAction = (request, act) => {
@@ -98,6 +113,7 @@ const HCDashboard = ({ user }) => {
         setComment('');
         setAllocation({
             driver_allocated: request.driver_allocated || '',
+            assigned_driver_id: request.assigned_driver_id || '',
             vehicle_allocated: request.vehicle_allocated || '',
             reg_no: request.reg_no || ''
         });
@@ -296,12 +312,22 @@ const HCDashboard = ({ user }) => {
                             <Row className="mb-3">
                                 <Col md={6}>
                                     <Form.Label>Driver Allocated</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={allocation.driver_allocated}
-                                        onChange={(e) => setAllocation({ ...allocation, driver_allocated: e.target.value })}
-                                        placeholder="Enter driver name"
-                                    />
+                                    <Form.Select
+                                        value={allocation.assigned_driver_id}
+                                        onChange={(e) => {
+                                            const drv = drivers.find(d => d.id === parseInt(e.target.value));
+                                            setAllocation({
+                                                ...allocation,
+                                                assigned_driver_id: e.target.value,
+                                                driver_allocated: drv ? drv.full_name : ''
+                                            });
+                                        }}
+                                    >
+                                        <option value="">Select Driver</option>
+                                        {drivers.map(d => (
+                                            <option key={d.id} value={d.id}>{d.full_name}</option>
+                                        ))}
+                                    </Form.Select>
                                 </Col>
                                 <Col md={6}>
                                     <Form.Label>Vehicle Allocated</Form.Label>

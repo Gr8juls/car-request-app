@@ -66,7 +66,8 @@ const Register = () => {
         try {
             const dataToSubmit = {
                 ...formData,
-                role: manager_level !== 'none' ? 'manager' : 'employee'
+                role: manager_level === 'driver_role' ? 'driver' : (manager_level !== 'none' ? 'manager' : 'employee'),
+                manager_level: manager_level === 'driver_role' ? 'none' : manager_level
             };
             await axios.post('http://localhost:5000/api/auth/register', dataToSubmit);
             navigate('/login');
@@ -113,49 +114,51 @@ const Register = () => {
                             />
                         </Form.Group>
 
-                        <Form.Label>Role Type</Form.Label>
-                        <Form.Select name="manager_level" value={manager_level} onChange={onChange} required>
-                            <option value="none">Employee</option>
-                            <option value="sub_department">Line Manager</option>
-                            <option value="department">Head of Department</option>
-                            <option value="operation">Operation Manager</option>
-                        </Form.Select>
-                    </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Role Type</Form.Label>
+                            <Form.Select name="manager_level" value={manager_level} onChange={onChange} required>
+                                <option value="none">Employee</option>
+                                <option value="sub_department">Line Manager</option>
+                                <option value="department">Head of Department</option>
+                                <option value="operation">Operation Manager</option>
+                                <option value="driver_role">Driver</option>
+                            </Form.Select>
+                        </Form.Group>
 
-                    <Form.Group className="mb-3">
-                        <Form.Label>Department</Form.Label>
-                        <Form.Select name="department_id" value={department_id} onChange={onChange} required>
-                            <option value="">Select Department</option>
-                            {departments.map(dept => (
-                                <option key={dept.id} value={dept.id}>{dept.name}</option>
-                            ))}
-                        </Form.Select>
-                    </Form.Group>
-                    <Form.Group className="mb-3">
-                        <Form.Label>Sub-Department</Form.Label>
-                        <Form.Select name="sub_department_id" value={sub_department_id} onChange={onChange} required={manager_level === 'sub_department'} disabled={!department_id}>
-                            <option value="">Select Sub-Department</option>
-                            {subDepartments.map(sub => (
-                                <option key={sub.id} value={sub.id}>{sub.name}</option>
-                            ))}
-                        </Form.Select>
-                    </Form.Group>
-                    <Form.Group className="mb-3">
-                        <Form.Label>Job Title</Form.Label>
-                        <Form.Control
-                            type="text"
-                            name="job_title"
-                            value={job_title}
-                            onChange={onChange}
-                            required
-                        />
-                    </Form.Group>
-                    <Button variant="primary" type="submit" className="w-100">
-                        Register
-                    </Button>
-                </Form>
-            </Card.Body>
-        </Card>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Department</Form.Label>
+                            <Form.Select name="department_id" value={department_id} onChange={onChange} required>
+                                <option value="">Select Department</option>
+                                {departments.map(dept => (
+                                    <option key={dept.id} value={dept.id}>{dept.name}</option>
+                                ))}
+                            </Form.Select>
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Sub-Department</Form.Label>
+                            <Form.Select name="sub_department_id" value={sub_department_id} onChange={onChange} required={manager_level === 'sub_department'} disabled={!department_id}>
+                                <option value="">Select Sub-Department</option>
+                                {subDepartments.map(sub => (
+                                    <option key={sub.id} value={sub.id}>{sub.name}</option>
+                                ))}
+                            </Form.Select>
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Job Title</Form.Label>
+                            <Form.Control
+                                type="text"
+                                name="job_title"
+                                value={job_title}
+                                onChange={onChange}
+                                required
+                            />
+                        </Form.Group>
+                        <Button variant="primary" type="submit" className="w-100">
+                            Register
+                        </Button>
+                    </Form>
+                </Card.Body>
+            </Card>
         </div >
     );
 };
