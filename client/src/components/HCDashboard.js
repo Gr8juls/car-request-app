@@ -126,8 +126,8 @@ const HCDashboard = ({ user }) => {
     const getStatusBadge = (status) => {
         switch (status) {
             case 'approved_by_hc': return <Badge bg="success">HC Approved & Allocated</Badge>;
-            case 'approved_by_dept_head': return <Badge bg="info">Dept. Head Approved</Badge>;
-            case 'approved_by_line_manager': return <Badge bg="primary">Line Manager Approved</Badge>;
+            case 'approved_by_dept_head': return <Badge bg="info">Manager of Managers Approved</Badge>;
+            case 'approved_by_line_manager': return <Badge bg="primary">Manager of Others Approved</Badge>;
             case 'rejected': return <Badge bg="danger">Rejected</Badge>;
             default: return <Badge bg="warning">Pending Manager Approval</Badge>;
         }
@@ -176,13 +176,13 @@ const HCDashboard = ({ user }) => {
                                                         <Badge bg="danger">Rejected</Badge>
                                                     ) : (
                                                         // HC can approve after LM for Employees, or after DH for Managers
-                                                        ((req.requester_manager_level === 'none' && req.status === 'approved_by_line_manager') ||
+                                                        ((req.requester_manager_level === 'none' && (req.status === 'approved_by_line_manager' || req.status === 'pending')) ||
                                                             (req.requester_manager_level !== 'none' && req.status === 'approved_by_dept_head')) ? (
                                                             <Button size="sm" variant="success" onClick={() => handleAction(req, 'approve')}>Process Allocation</Button>
                                                         ) : (
                                                             <span className="small text-muted text-capitalize">
-                                                                {req.status === 'pending' ? 'Pending Line Manager' :
-                                                                    req.status === 'approved_by_line_manager' ? 'Pending Dept Head' :
+                                                                {req.status === 'pending' ? 'Pending Manager of Others' :
+                                                                    req.status === 'approved_by_line_manager' ? 'Pending Manager of Managers' :
                                                                         req.status.replace(/_/g, ' ')}
                                                             </span>
                                                         )
@@ -212,8 +212,8 @@ const HCDashboard = ({ user }) => {
                                         <Form.Label>Status</Form.Label>
                                         <Form.Select value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
                                             <option value="">All Statuses</option>
-                                            <option value="pending">Pending Line Manager</option>
-                                            <option value="approved_by_line_manager">Pending Dept Head</option>
+                                            <option value="pending">Pending Manager of Others</option>
+                                            <option value="approved_by_line_manager">Pending Manager of Managers</option>
                                             <option value="approved_by_dept_head">Pending HC</option>
                                             <option value="approved_by_hc">HC Approved</option>
                                             <option value="rejected">Rejected</option>

@@ -72,8 +72,8 @@ const Dashboard = ({ user }) => {
     const getStatusBadge = (status) => {
         switch (status) {
             case 'approved_by_hc': return <Badge bg="success">Final Approved (HC)</Badge>;
-            case 'approved_by_dept_head': return <Badge bg="info">Dept. Head Approved</Badge>;
-            case 'approved_by_line_manager': return <Badge bg="primary">Line Manager Approved</Badge>;
+            case 'approved_by_dept_head': return <Badge bg="info">Manager of Managers Approved</Badge>;
+            case 'approved_by_line_manager': return <Badge bg="primary">Manager of Others Approved</Badge>;
             case 'rejected': return <Badge bg="danger">Rejected</Badge>;
             default: return <Badge bg="warning">Pending</Badge>;
         }
@@ -89,7 +89,7 @@ const Dashboard = ({ user }) => {
             )}
             {user.manager_level === 'department' && (
                 <p className="text-muted small mb-4">
-                    <i className="bi bi-info-circle"></i> Viewing all requests from your entire department (all channels) • You can approve requests after Line Manager approval
+                    <i className="bi bi-info-circle"></i> Viewing all requests from your entire department (all channels) • You can approve requests after Manager of Others approval
                 </p>
             )}
             <Card className="shadow-sm border-0">
@@ -139,7 +139,7 @@ const Dashboard = ({ user }) => {
                                                             </>
                                                         ) : (user.manager_level === 'department' && req.status === 'pending' && req.requester_manager_level !== 'none') ? (
                                                             <span className="small text-info me-2">
-                                                                <i className="bi bi-clock"></i> Pending LM
+                                                                <i className="bi bi-clock"></i> Pending Manager of Others
                                                             </span>
                                                         ) : (
                                                             <span className="small text-muted text-capitalize me-2">
@@ -204,7 +204,7 @@ const Dashboard = ({ user }) => {
                                                 (requestDetails.status === 'rejected' ? 'danger' : 'secondary')
                                         } className="rounded-circle p-2 mb-1">2</Badge>
                                         <br />
-                                        <small className="fw-bold">Line Manager</small>
+                                        <small className="fw-bold">Manager of Others</small>
                                     </div>
                                     {requestDetails.requester_manager_level !== 'none' && (
                                         <div className="text-center" style={{ width: '25%' }}>
@@ -213,7 +213,7 @@ const Dashboard = ({ user }) => {
                                                     'secondary'
                                             } className="rounded-circle p-2 mb-1">3</Badge>
                                             <br />
-                                            <small className="fw-bold">Dept Head</small>
+                                            <small className="fw-bold">Manager of Managers</small>
                                         </div>
                                     )}
                                     <div className="text-center" style={{ width: '25%' }}>

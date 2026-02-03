@@ -81,17 +81,28 @@ exports.getRequests = async (req, res) => {
             const { department_id, sub_department_id, manager_level } = managerRows[0];
 
             if (manager_level === 'sub_department') {
-                // Line Manager sees requests from their sub-department (channel)
+                // Line Manager sees requests from their direct reports (using line_manager_id)
                 query = `
                     SELECT r.*, u.full_name, u.manager_level as requester_manager_level
                     FROM car_requests r 
                     JOIN users u ON r.user_id = u.id 
-                    WHERE u.sub_department_id = ? 
+                    WHERE u.line_manager_id = ? 
                     ORDER BY r.created_at DESC
                 `;
-                params = [sub_department_id];
+                params = [req.user.id];
             } else if (manager_level === 'department') {
                 // Dept Head sees requests from their entire department
+                // They ALSO might be the direct Line Manager for some people (e.g. Line Managers themselves)
+                // So we can include:
+                // 1. Everyone in their department (broad view - current logic)
+                // 2. OR Just their direct reports?
+                // The requirement implies a hierarchy: Employee -> LM -> DH.
+                // If we strictly follow the 'line manager' approval step, the DH only acts as 'Line Manager' for the LMs.
+                // But for the 'Department Head' approval step, they see requests approved by LMs in their Dept.
+
+                // Let's keep the broad department view for now so they can see everything,
+                // but we need to ensure they can Approve as 'Line Manager' if they are the direct supervisor.
+
                 query = `
                     SELECT r.*, u.full_name, u.manager_level as requester_manager_level
                     FROM car_requests r 
@@ -102,7 +113,7 @@ exports.getRequests = async (req, res) => {
                 params = [department_id];
             } else {
                 // Fallback for employee with manager_level none (their own only)
-                query = 'SELECT r.*, u.manager_level as requester_manager_level FROM car_requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = ? ORDER BY r.created_at DESC';
+                query = 'SELECT r.*, u.full_name, u.manager_level as requester_manager_level FROM car_requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = ? ORDER BY r.created_at DESC';
                 params = [req.user.id];
             }
 
@@ -186,7 +197,7 @@ exports.updateStatus = async (req, res) => {
             // Path 2: Line Manager -> Dept Head -> HC
 
             if (status === 'approved_by_hc') {
-                const isEmployeePathOk = (currentRequest.requester_manager_level === 'none' && currentStatus === 'approved_by_line_manager');
+                const isEmployeePathOk = (currentRequest.requester_manager_level === 'none' && (currentStatus === 'approved_by_line_manager' || currentStatus === 'pending'));
                 const isManagerPathOk = (currentRequest.requester_manager_level !== 'none' && currentStatus === 'approved_by_dept_head');
 
                 if (!isEmployeePathOk && !isManagerPathOk && currentStatus !== 'approved_by_hc') {
@@ -197,10 +208,14 @@ exports.updateStatus = async (req, res) => {
             updateQuery += ', hr_comment = ?, driver_allocated = ?, vehicle_allocated = ?, reg_no = ? WHERE id = ?';
             params.push(comment, driver_allocated, vehicle_allocated, reg_no, requestId);
         } else if (approver.manager_level === 'sub_department') {
-            // Line Manager (manages one channel within a department)
-            if (approver.sub_department_id !== currentRequest.sub_department_id) {
-                return res.status(403).json({ message: 'Not authorized to approve for this sub-department' });
+            // Line Manager (manages specific people directly)
+
+            // Check if this approver is the direct line manager of the requester
+            const [requesterRow] = await db.query('SELECT line_manager_id FROM users WHERE id = ?', [currentRequest.user_id]);
+            if (!requesterRow.length || requesterRow[0].line_manager_id !== req.user.id) {
+                return res.status(403).json({ message: 'You are not the assigned Line Manager for this user' });
             }
+
             // Line Manager only approves 'pending' requests
             if (status === 'approved_by_line_manager' && currentStatus !== 'pending') {
                 return res.status(400).json({ message: 'Can only approve pending requests' });
@@ -217,7 +232,7 @@ exports.updateStatus = async (req, res) => {
             // AND the requester is a Line Manager (as per current workflow LM -> DH -> HC)
             if (status === 'approved_by_dept_head') {
                 if (currentStatus !== 'approved_by_line_manager' || currentRequest.requester_manager_level === 'none') {
-                    return res.status(400).json({ message: 'Request does not require Department Head approval' });
+                    return res.status(400).json({ message: 'Request does not require Manager of Managers approval' });
                 }
             }
             updateQuery += ', manager_comment = ? WHERE id = ?';

@@ -57,10 +57,10 @@ const Register = () => {
 
         // Basic Validation
         if (manager_level === 'sub_department' && !sub_department_id) {
-            return setError('Sub-department is required for Line Managers');
+            return setError('Sub-department is required for Manager of Others');
         }
         if (manager_level === 'department' && !department_id) {
-            return setError('Department is required for Department Heads');
+            return setError('Department is required for Manager of Managers');
         }
 
         try {
@@ -116,9 +116,9 @@ const Register = () => {
                         <Form.Group className="mb-3">
                             <Form.Label>Role Type</Form.Label>
                             <Form.Select name="manager_level" value={manager_level} onChange={onChange} required>
-                                <option value="none">Regular Employee</option>
-                                <option value="sub_department">Line Manager (Channel Manager)</option>
-                                <option value="department">Department Head</option>
+                                <option value="none">Manager of Self</option>
+                                <option value="sub_department">Manager of Others</option>
+                                <option value="department">Manager of Managers</option>
                             </Form.Select>
                         </Form.Group>
 

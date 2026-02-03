@@ -66,7 +66,7 @@ exports.promoteToManager = async (req, res) => {
         `, [userId, subDepartmentId]);
 
         await connection.commit();
-        res.json({ message: 'User promoted to Line Manager successfully' });
+        res.json({ message: 'User promoted to Manager of Others successfully' });
 
     } catch (error) {
         if (connection) await connection.rollback();

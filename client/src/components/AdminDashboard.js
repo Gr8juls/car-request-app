@@ -234,10 +234,10 @@ const AdminDashboard = () => {
             {/* Promote / Allocate Manager Modal */}
             <Modal show={showPromoteModal} onHide={() => setShowPromoteModal(false)}>
                 <Modal.Header closeButton>
-                    <Modal.Title>Allocate Line Manager</Modal.Title>
+                    <Modal.Title>Allocate Manager of Others</Modal.Title>
                 </Modal.Header>
                 <Modal.Body>
-                    <p>Assign <strong>{selectedUser?.full_name}</strong> as Line Manager for:</p>
+                    <p>Assign <strong>{selectedUser?.full_name}</strong> as Manager of Others for:</p>
                     <Form.Group className="mb-3">
                         <Form.Label>Department</Form.Label>
                         <Form.Select value={selectedDeptForFilter} onChange={handlePromoteDeptChange}>
@@ -295,8 +295,8 @@ const AdminDashboard = () => {
                             <Form.Label>Manager Level</Form.Label>
                             <Form.Select name="manager_level" value={userFormData.manager_level} onChange={handleUserFormChange}>
                                 <option value="none">None</option>
-                                <option value="sub_department">Sub-Department Line Manager</option>
-                                <option value="department">Department Line Manager (Head)</option>
+                                <option value="sub_department">Manager of Others</option>
+                                <option value="department">Manager of Managers</option>
                             </Form.Select>
                         </Form.Group>
                         <Form.Group className="mb-3">
