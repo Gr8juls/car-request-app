@@ -36,9 +36,23 @@ const Dashboard = ({ user }) => {
         setShowModal(true);
     };
 
-    const handleView = (request) => {
-        setRequestDetails(request);
-        setViewModal(true);
+    const handleView = async (request) => {
+        try {
+            const config = {
+                headers: { 'x-auth-token': user.token }
+            };
+            // Fetch logs for this request
+            const logsRes = await axios.get(`http://localhost:5000/api/cars/${request.id}/logs`, config);
+            const requestWithLogs = { ...request, logs: logsRes.data };
+
+            setRequestDetails(requestWithLogs);
+            setViewModal(true);
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+            // Fallback to show details without logs if fetch fails
+            setRequestDetails(request);
+            setViewModal(true);
+        }
     };
 
     const submitAction = async () => {
@@ -59,6 +73,8 @@ const Dashboard = ({ user }) => {
                     status = 'approved_by_dept_head';
                 } else if (user.manager_level === 'operation') {
                     status = 'approved_by_ops_manager';
+                } else if (user.manager_level === 'md') {
+                    status = 'approved_by_md';
                 }
             }
 
@@ -74,6 +90,7 @@ const Dashboard = ({ user }) => {
     const getStatusBadge = (status) => {
         switch (status) {
             case 'approved_by_hc': return <Badge bg="success">Final Approved (HC)</Badge>;
+            case 'approved_by_md': return <Badge bg="primary">Managing Director Approved</Badge>;
             case 'approved_by_ops_manager': return <Badge bg="info">Operation Manager Approved</Badge>;
             case 'approved_by_dept_head': return <Badge bg="primary">Head of Department Approved</Badge>;
             case 'approved_by_line_manager': return <Badge bg="secondary">Line Manager Approved</Badge>;
@@ -100,6 +117,16 @@ const Dashboard = ({ user }) => {
                     <i className="bi bi-info-circle"></i> Viewing requests pending Operation Manager approval
                 </p>
             )}
+            {user.manager_level === 'md' && (
+                <p className="text-muted small mb-4">
+                    <i className="bi bi-info-circle"></i> Viewing requests pending Managing Director approval
+                </p>
+            )}
+            {user.manager_level === 'board' && (
+                <p className="text-muted small mb-4">
+                    <i className="bi bi-info-circle"></i> Tracking your requests as a Board Member
+                </p>
+            )}
             <Card className="shadow-sm border-0">
                 <Card.Body>
                     <Table striped hover responsive className="bg-white">
@@ -110,6 +137,7 @@ const Dashboard = ({ user }) => {
                                 <th>Status</th>
 
                                 {(user.role === 'manager' || user.role === 'hc' || (user.manager_level && user.manager_level !== 'none')) && <th>User / Dept</th>}
+                                <th>Assigned To</th>
                                 <th>Action</th>
                             </tr>
                         </thead>
@@ -135,12 +163,14 @@ const Dashboard = ({ user }) => {
                                                 <small className="text-muted">{req.department}</small>
                                             </td>
                                         )}
+                                        <td>{req.assigned_to_name || <small className="text-muted">N/A</small>}</td>
                                         <td>
                                             <div className="d-flex align-items-center">
                                                 {(user.role === 'manager' || (user.manager_level && user.manager_level !== 'none')) ? (
                                                     <>
                                                         {((user.manager_level === 'sub_department' && req.status === 'pending') ||
-                                                            (user.manager_level === 'department' && req.status === 'approved_by_line_manager' && req.requester_manager_level !== 'none')) ? (
+                                                            (user.manager_level === 'department' && req.status === 'approved_by_line_manager' && req.requester_manager_level !== 'none') ||
+                                                            (user.manager_level === 'md' && req.status === 'pending' && req.requester_manager_level === 'board')) ? (
                                                             <>
                                                                 <Button size="sm" variant="success" className="me-2" onClick={() => handleAction(req, 'approve')}>Approve</Button>
                                                                 <Button size="sm" variant="outline-danger" className="me-2" onClick={() => handleAction(req, 'reject')}>Reject</Button>
@@ -149,6 +179,11 @@ const Dashboard = ({ user }) => {
                                                             <span className="small text-info me-2">
                                                                 <i className="bi bi-clock"></i> Pending Manager of Others
                                                             </span>
+                                                        ) : (user.manager_level === 'operation' && req.status === 'approved_by_dept_head') ? (
+                                                            <>
+                                                                <Button size="sm" variant="success" className="me-2" onClick={() => handleAction(req, 'approve')}>Approve</Button>
+                                                                <Button size="sm" variant="outline-danger" className="me-2" onClick={() => handleAction(req, 'reject')}>Reject</Button>
+                                                            </>
                                                         ) : (
                                                             <span className="small text-muted text-capitalize me-2">
                                                                 {req.status.replace(/_/g, ' ')}
@@ -201,56 +236,39 @@ const Dashboard = ({ user }) => {
                             {/* Progress Stepper - Dynamic Path based on user type */}
                             <div className="mb-4 position-relative">
                                 <div className="d-flex justify-content-between mb-2">
-                                    <div className="text-center" style={{ width: '20%' }}>
+                                    <div className="text-center" style={{ width: requestDetails.requester_manager_level === 'board' ? '33%' : '33%' }}>
                                         <Badge bg="success" className="rounded-circle p-2 mb-1">1</Badge>
                                         <br />
                                         <small className="fw-bold">Submitted</small>
                                     </div>
-                                    <div className="text-center" style={{ width: '20%' }}>
+                                    <div className="text-center" style={{ width: requestDetails.requester_manager_level === 'board' ? '33%' : '33%' }}>
                                         <Badge bg={
-                                            ['approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_hc'].includes(requestDetails.status) ? 'success' :
+                                            ['approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_md', 'approved_by_hc'].includes(requestDetails.status) ? 'success' :
                                                 (requestDetails.status === 'rejected' ? 'danger' : 'secondary')
                                         } className="rounded-circle p-2 mb-1">2</Badge>
                                         <br />
                                         <small className="fw-bold">
-                                            {requestDetails.requester_manager_level === 'none' ? 'Line Manager' : 'Head of Dept'}
+                                            {requestDetails.requester_manager_level === 'board' ? 'MD Approval' : 'Line Manager'}
                                         </small>
                                     </div>
-                                    <div className="text-center" style={{ width: '20%' }}>
+                                    <div className="text-center" style={{ width: requestDetails.requester_manager_level === 'board' ? '33%' : '33%' }}>
                                         <Badge bg={
-                                            requestDetails.requester_manager_level === 'none' ? (
-                                                ['approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
-                                            ) : (
-                                                ['approved_by_ops_manager', 'approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
-                                            )
+                                            ['approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
                                         } className="rounded-circle p-2 mb-1">3</Badge>
                                         <br />
-                                        <small className="fw-bold">
-                                            {requestDetails.requester_manager_level === 'none' ? 'HC Final' : 'Operation Manager'}
-                                        </small>
+                                        <small className="fw-bold">HC Final</small>
                                     </div>
-                                    {requestDetails.requester_manager_level !== 'none' && (
-                                        <div className="text-center" style={{ width: '20%' }}>
-                                            <Badge bg={
-                                                ['approved_by_hc'].includes(requestDetails.status) ? 'success' : 'secondary'
-                                            } className="rounded-circle p-2 mb-1">4</Badge>
-                                            <br />
-                                            <small className="fw-bold">HC Final</small>
-                                        </div>
-                                    )}
                                 </div>
                                 <div className="progress" style={{ height: '5px' }}>
                                     <div className={`progress-bar bg-${requestDetails.status === 'rejected' ? 'danger' : 'success'}`} role="progressbar" style={{
-                                        width: requestDetails.requester_manager_level === 'none' ? (
+                                        width: requestDetails.requester_manager_level === 'board' ? (
                                             requestDetails.status === 'approved_by_hc' ? '100%' :
-                                                requestDetails.status === 'approved_by_line_manager' ? '66%' :
+                                                requestDetails.status === 'approved_by_md' ? '66%' :
                                                     requestDetails.status === 'rejected' ? '100%' : '33%'
                                         ) : (
                                             requestDetails.status === 'approved_by_hc' ? '100%' :
-                                                requestDetails.status === 'approved_by_ops_manager' ? '75%' :
-                                                    requestDetails.status === 'approved_by_dept_head' ? '50%' :
-                                                        requestDetails.status === 'approved_by_line_manager' ? '25%' :
-                                                            requestDetails.status === 'rejected' ? '100%' : '25%'
+                                                requestDetails.status === 'approved_by_line_manager' ? '66%' :
+                                                    requestDetails.status === 'rejected' ? '100%' : '33%'
                                         )
                                     }}></div>
                                 </div>
@@ -307,6 +325,39 @@ const Dashboard = ({ user }) => {
                                     </Card>
                                 </>
                             )}
+
+                            {/* Approval History Timeline */}
+                            <h6 className="mt-4 mb-3">Approval Timeline</h6>
+                            <div className="timeline">
+                                {requestDetails.logs && requestDetails.logs.length > 0 ? (
+                                    requestDetails.logs.map((log, index) => (
+                                        <div key={log.id} className="d-flex mb-3">
+                                            <div className="me-3">
+                                                <Badge bg={log.action === 'REJECTED' ? 'danger' : 'success'} className="rounded-circle p-2">
+                                                    {index + 1}
+                                                </Badge>
+                                                {index < requestDetails.logs.length - 1 && (
+                                                    <div style={{ width: '2px', height: '100%', backgroundColor: '#dee2e6', margin: '0 auto' }}></div>
+                                                )}
+                                            </div>
+                                            <div>
+                                                <strong>{log.action}</strong>
+                                                <div className="text-muted small">
+                                                    By: {log.actor_name} <br />
+                                                    {new Date(log.created_at).toLocaleString()}
+                                                </div>
+                                                {log.comment && (
+                                                    <div className="mt-1 small fst-italic text-secondary">
+                                                        "{log.comment}"
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <p className="text-muted small">No history available.</p>
+                                )}
+                            </div>
                         </div>
                     )}
                 </Modal.Body>

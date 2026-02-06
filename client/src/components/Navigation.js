@@ -20,10 +20,7 @@ const Navigation = ({ user, onLogout }) => {
                 <Navbar.Collapse id="basic-navbar-nav">
                     <Nav className="ms-auto">
                         {!user ? (
-                            <>
-                                <Nav.Link as={Link} to="/login">Login</Nav.Link>
-                                <Nav.Link as={Link} to="/register">Register</Nav.Link>
-                            </>
+                            <Nav.Link as={Link} to="/login">Login</Nav.Link>
                         ) : (
                             <>
                                 <Nav.Link as={Link} to={user.role === 'hc' || user.department === 'Human Capital' ? "/hc-dashboard" : "/dashboard"}>

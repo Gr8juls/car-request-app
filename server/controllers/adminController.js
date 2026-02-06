@@ -15,16 +15,28 @@ const getDbConnection = async () => {
     return await mysql.createConnection(dbConfig);
 };
 
+const logAudit = async (connection, userId, action, changedFields, adminId) => {
+    try {
+        await connection.query(
+            'INSERT INTO audit_logs (user_id, action, changed_fields, acted_by_admin_id) VALUES (?, ?, ?, ?)',
+            [userId, action, JSON.stringify(changedFields), adminId]
+        );
+    } catch (error) {
+        console.error('Audit Log Error:', error);
+    }
+};
+
 exports.getAllUsers = async (req, res) => {
     let connection;
     try {
         connection = await getDbConnection();
         const [users] = await connection.query(`
-            SELECT u.id, u.email, u.full_name, u.role, u.department_id, u.sub_department_id, u.job_title, u.manager_level,
-                   d.name as department_name, sd.name as sub_department_name
+            SELECT u.id, u.email, u.full_name, u.role, u.department_id, u.sub_department_id, u.job_title, u.manager_level, u.line_manager_id, u.is_active,
+                   d.name as department_name, sd.name as sub_department_name, lm.full_name as line_manager_name
             FROM users u
             LEFT JOIN departments d ON u.department_id = d.id
             LEFT JOIN sub_departments sd ON u.sub_department_id = sd.id
+            LEFT JOIN users lm ON u.line_manager_id = lm.id
             ORDER BY u.created_at DESC
         `);
         res.json(users);
@@ -78,7 +90,7 @@ exports.promoteToManager = async (req, res) => {
 };
 
 exports.createUser = async (req, res) => {
-    const { email, password, role, full_name, department_id, sub_department_id, job_title, manager_level } = req.body;
+    const { email, password, role, full_name, department_id, sub_department_id, job_title, manager_level, line_manager_id } = req.body;
     let connection;
     try {
         connection = await getDbConnection();
@@ -91,15 +103,36 @@ exports.createUser = async (req, res) => {
             return res.status(400).json({ message: 'User already exists' });
         }
 
+        // Role Uniqueness Validations
+        if (manager_level === 'md') {
+            const [mdExists] = await connection.query('SELECT id FROM users WHERE manager_level = "md" AND is_active = TRUE');
+            if (mdExists.length > 0) {
+                await connection.rollback();
+                return res.status(400).json({ message: 'Only one Managing Director can be active at a time.' });
+            }
+        }
+        if (manager_level === 'department' && department_id) {
+            const [hodExists] = await connection.query('SELECT id FROM users WHERE manager_level = "department" AND department_id = ? AND is_active = TRUE', [department_id]);
+            if (hodExists.length > 0) {
+                await connection.rollback();
+                return res.status(400).json({ message: 'A Head of Department already exists for this department.' });
+            }
+        }
+
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
 
         const [result] = await connection.query(
-            'INSERT INTO users (email, password, role, full_name, department_id, sub_department_id, job_title, manager_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-            [email, hashedPassword, role || 'employee', full_name, department_id || null, sub_department_id || null, job_title, manager_level || 'none']
+            'INSERT INTO users (email, password, role, full_name, department_id, sub_department_id, job_title, manager_level, line_manager_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            [email, hashedPassword, role || 'employee', full_name, department_id || null, sub_department_id || null, job_title, manager_level || 'none', line_manager_id || null]
         );
 
         const newUserId = result.insertId;
+
+        // Log Audit
+        await logAudit(connection, newUserId, 'CREATED', {
+            after: { email, role, full_name, department_id, sub_department_id, job_title, manager_level }
+        }, req.user.id);
 
         // If manager, update the respective level table
         if (role === 'manager') {
@@ -124,14 +157,48 @@ exports.createUser = async (req, res) => {
 
 exports.updateUser = async (req, res) => {
     const { id } = req.params;
-    const { email, role, full_name, department_id, sub_department_id, job_title, password, manager_level } = req.body;
+    const { email, role, full_name, department_id, sub_department_id, job_title, password, manager_level, line_manager_id, is_active } = req.body;
     let connection;
     try {
         connection = await getDbConnection();
         await connection.beginTransaction();
 
-        let query = 'UPDATE users SET email = ?, role = ?, full_name = ?, department_id = ?, sub_department_id = ?, job_title = ?, manager_level = ?';
-        let params = [email, role, full_name, department_id || null, sub_department_id || null, job_title, manager_level || 'none'];
+        // Fetch current values for audit
+        const [oldUser] = await connection.query('SELECT * FROM users WHERE id = ?', [id]);
+        if (oldUser.length === 0) {
+            await connection.rollback();
+            return res.status(404).json({ message: 'User not found' });
+        }
+        const before = oldUser[0];
+
+        // Role Uniqueness Validations
+        if (manager_level === 'md' && before.manager_level !== 'md' && (is_active !== false)) {
+            const [mdExists] = await connection.query('SELECT id FROM users WHERE manager_level = "md" AND is_active = TRUE AND id != ?', [id]);
+            if (mdExists.length > 0) {
+                await connection.rollback();
+                return res.status(400).json({ message: 'Only one Managing Director can be active at a time.' });
+            }
+        }
+        if (manager_level === 'department' && department_id && (before.manager_level !== 'department' || before.department_id != department_id) && (is_active !== false)) {
+            const [hodExists] = await connection.query('SELECT id FROM users WHERE manager_level = "department" AND department_id = ? AND is_active = TRUE AND id != ?', [department_id, id]);
+            if (hodExists.length > 0) {
+                await connection.rollback();
+                return res.status(400).json({ message: 'A Head of Department already exists for this department.' });
+            }
+        }
+
+        let query = 'UPDATE users SET email = ?, role = ?, full_name = ?, department_id = ?, sub_department_id = ?, job_title = ?, manager_level = ?, line_manager_id = ?, is_active = ?';
+        let params = [
+            email || before.email,
+            role || before.role,
+            full_name || before.full_name,
+            department_id || before.department_id,
+            sub_department_id || before.sub_department_id,
+            job_title || before.job_title,
+            manager_level || before.manager_level,
+            line_manager_id !== undefined ? line_manager_id : before.line_manager_id,
+            is_active !== undefined ? is_active : before.is_active
+        ];
 
         if (password && password.trim() !== '') {
             const salt = await bcrypt.genSalt(10);
@@ -145,18 +212,48 @@ exports.updateUser = async (req, res) => {
 
         await connection.query(query, params);
 
+        // Audit Logging
+        const action = (is_active === false && before.is_active) ? 'DEACTIVATED' : 'UPDATED';
+        await logAudit(connection, id, action, {
+            before: {
+                email: before.email, role: before.role, full_name: before.full_name,
+                department_id: before.department_id, sub_department_id: before.sub_department_id,
+                job_title: before.job_title, manager_level: before.manager_level, is_active: before.is_active
+            },
+            after: {
+                email, role, full_name, department_id, sub_department_id,
+                job_title, manager_level, is_active
+            }
+        }, req.user.id);
+
         // Handle Manager Allocation Logic
         // First, clear this user from any previous management positions to avoid stale data if they changed depts
         await connection.query('UPDATE departments SET manager_id = NULL WHERE manager_id = ?', [id]);
         await connection.query('UPDATE sub_departments SET manager_id = NULL WHERE manager_id = ?', [id]);
 
         // Then assign if they are currently a manager
-        if (role === 'manager') {
-            if (manager_level === 'department' && department_id) {
-                await connection.query('UPDATE departments SET manager_id = ? WHERE id = ?', [id, department_id]);
-            } else if (manager_level === 'sub_department' && sub_department_id) {
-                await connection.query('UPDATE sub_departments SET manager_id = ? WHERE id = ?', [id, sub_department_id]);
+        if ((role || before.role) === 'manager') {
+            const currentManagerLevel = manager_level || before.manager_level;
+            const currentDeptId = department_id || before.department_id;
+            const currentSubDeptId = sub_department_id || before.sub_department_id;
+
+            if (currentManagerLevel === 'department' && currentDeptId) {
+                await connection.query('UPDATE departments SET manager_id = ? WHERE id = ?', [id, currentDeptId]);
+            } else if (currentManagerLevel === 'sub_department' && currentSubDeptId) {
+                await connection.query('UPDATE sub_departments SET manager_id = ? WHERE id = ?', [id, currentSubDeptId]);
             }
+        }
+
+        // Reassign pending requests if line manager changed
+        if (line_manager_id !== undefined && line_manager_id !== before.line_manager_id) {
+            // Also ensure we don't accidentally set assigned_to to null if it shouldn't be, 
+            // but if line_manager_id IS null, then assigned_to becomes null (orphan).
+            // We only reassign 'pending' requests as per FR-6.
+            await connection.query(`
+                UPDATE car_requests 
+                SET assigned_to = ? 
+                WHERE user_id = ? AND status = 'pending'
+             `, [line_manager_id, id]);
         }
 
         await connection.commit();
@@ -190,6 +287,27 @@ exports.deleteUser = async (req, res) => {
         res.json({ message: 'User deleted successfully' });
     } catch (error) {
         if (connection) await connection.rollback();
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    } finally {
+        if (connection) await connection.end();
+    }
+};
+
+exports.getUserAuditHistory = async (req, res) => {
+    const { id } = req.params;
+    let connection;
+    try {
+        connection = await getDbConnection();
+        const [logs] = await connection.query(`
+            SELECT a.*, u.full_name as admin_name 
+            FROM audit_logs a 
+            LEFT JOIN users u ON a.acted_by_admin_id = u.id 
+            WHERE a.user_id = ? 
+            ORDER BY a.created_at DESC
+        `, [id]);
+        res.json(logs);
+    } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
     } finally {

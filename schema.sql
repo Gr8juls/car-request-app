@@ -3,18 +3,24 @@ CREATE DATABASE IF NOT EXISTS car_request_app;
 USE car_request_app;
 
 -- Users Table
--- Roles: 'employee', 'manager', 'hc'
+-- Roles: 'employee', 'manager', 'hc', 'admin', 'driver'
 CREATE TABLE IF NOT EXISTS users (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    password VARCHAR(255) NOT NULL, -- Hashed password
-    role ENUM('employee', 'manager', 'hc') NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    role ENUM('employee', 'manager', 'hc', 'admin', 'driver') NOT NULL,
     full_name VARCHAR(100) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    department_id INT,
+    sub_department_id INT,
+    job_title VARCHAR(100),
+    manager_level ENUM('none', 'sub_department', 'department', 'operation', 'board', 'md') DEFAULT 'none',
+    line_manager_id INT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (line_manager_id) REFERENCES users(id)
 );
 
 -- Car Requests Table
--- Status: 'pending', 'approved_by_manager', 'approved_by_hc', 'rejected'
+-- Status: 'pending', 'approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_md', 'approved_by_hc', 'rejected'
 CREATE TABLE IF NOT EXISTS car_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
@@ -27,7 +33,7 @@ CREATE TABLE IF NOT EXISTS car_requests (
     time_out TIME,
     date_back DATE NOT NULL,
     time_back TIME,
-    status ENUM('pending', 'approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_hc', 'rejected') DEFAULT 'pending',
+    status ENUM('pending', 'approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_md', 'approved_by_hc', 'rejected') DEFAULT 'pending',
     manager_comment TEXT,
     hr_comment TEXT,
     driver_allocated VARCHAR(100),

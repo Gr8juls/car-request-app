@@ -66,7 +66,7 @@ const Register = () => {
         try {
             const dataToSubmit = {
                 ...formData,
-                role: manager_level === 'driver_role' ? 'driver' : (manager_level !== 'none' ? 'manager' : 'employee'),
+                role: (manager_level === 'board' || manager_level === 'md' || manager_level === 'operation' || manager_level === 'department' || manager_level === 'sub_department') ? 'manager' : (manager_level === 'driver_role' ? 'driver' : 'employee'),
                 manager_level: manager_level === 'driver_role' ? 'none' : manager_level
             };
             await axios.post('http://localhost:5000/api/auth/register', dataToSubmit);
@@ -121,6 +121,8 @@ const Register = () => {
                                 <option value="sub_department">Line Manager</option>
                                 <option value="department">Head of Department</option>
                                 <option value="operation">Operation Manager</option>
+                                <option value="board">Board Member</option>
+                                <option value="md">Managing Director</option>
                                 <option value="driver_role">Driver</option>
                             </Form.Select>
                         </Form.Group>

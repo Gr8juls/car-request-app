@@ -2,8 +2,14 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Table, Button, Modal, Form, Badge } from 'react-bootstrap';
 
-const AdminDashboard = () => {
+const AdminDashboard = ({ user }) => {
     const [users, setUsers] = useState([]);
+
+    const config = {
+        headers: {
+            'x-auth-token': user?.token
+        }
+    };
 
     // Promote/Allocate Modal State
     const [showPromoteModal, setShowPromoteModal] = useState(false);
@@ -23,12 +29,23 @@ const AdminDashboard = () => {
         department_id: '',
         sub_department_id: '',
         job_title: '',
-        manager_level: 'none'
+        manager_level: 'none',
+        line_manager_id: ''
     });
 
     const [departments, setDepartments] = useState([]);
     const [subDepartments, setSubDepartments] = useState([]);
     const [filteredSubDepts, setFilteredSubDepts] = useState([]); // For the filter in Dashboard or Modal
+
+    // Audit State
+    const [showAuditModal, setShowAuditModal] = useState(false);
+    const [auditLogs, setAuditLogs] = useState([]);
+    const [auditUser, setAuditUser] = useState(null);
+
+    // Filters
+    const [roleFilter, setRoleFilter] = useState('');
+    const [deptFilter, setDeptFilter] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
 
     useEffect(() => {
         fetchUsers();
@@ -37,7 +54,7 @@ const AdminDashboard = () => {
 
     const fetchUsers = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/users');
+            const res = await axios.get('http://localhost:5000/api/admin/users', config);
             setUsers(res.data);
         } catch (err) {
             console.error(err);
@@ -46,7 +63,7 @@ const AdminDashboard = () => {
 
     const fetchDepartments = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/departments');
+            const res = await axios.get('http://localhost:5000/api/departments', config);
             setDepartments(res.data);
         } catch (err) {
             console.error(err);
@@ -55,7 +72,7 @@ const AdminDashboard = () => {
 
     const fetchSubDepartments = async (deptId) => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/departments/sub?department_id=${deptId}`);
+            const res = await axios.get(`http://localhost:5000/api/departments/sub?department_id=${deptId}`, config);
             setFilteredSubDepts(res.data);
         } catch (err) {
             console.error(err);
@@ -87,7 +104,7 @@ const AdminDashboard = () => {
             await axios.post('http://localhost:5000/api/admin/promote', {
                 userId: selectedUser.id,
                 subDepartmentId: selectedSubDept
-            });
+            }, config);
             setShowPromoteModal(false);
             fetchUsers();
             alert('User promoted successfully');
@@ -109,7 +126,9 @@ const AdminDashboard = () => {
             department_id: '',
             sub_department_id: '',
             job_title: '',
-            manager_level: 'none'
+            manager_level: 'none',
+            line_manager_id: '',
+            is_active: true
         });
         setFilteredSubDepts([]);
         setShowUserModal(true);
@@ -126,7 +145,9 @@ const AdminDashboard = () => {
             department_id: user.department_id || '',
             sub_department_id: user.sub_department_id || '',
             job_title: user.job_title || '',
-            manager_level: user.manager_level || 'none'
+            manager_level: user.manager_level || 'none',
+            line_manager_id: user.line_manager_id || '',
+            is_active: user.is_active === 1 || user.is_active === true
         });
         if (user.department_id) {
             fetchSubDepartments(user.department_id);
@@ -137,13 +158,38 @@ const AdminDashboard = () => {
     };
 
     const handleDeleteUserClick = async (userId) => {
-        if (window.confirm('Are you sure you want to delete this user?')) {
+        if (window.confirm('Are you sure you want to delete this user? This will remove all their records.')) {
             try {
-                await axios.delete(`http://localhost:5000/api/admin/users/${userId}`);
+                await axios.delete(`http://localhost:5000/api/admin/users/${userId}`, config);
                 fetchUsers();
             } catch (err) {
                 console.error(err);
                 alert('Failed to delete user');
+            }
+        }
+    };
+
+    const handleViewAuditHistory = async (user) => {
+        setAuditUser(user);
+        try {
+            const res = await axios.get(`http://localhost:5000/api/admin/audit/${user.id}`, config);
+            setAuditLogs(res.data);
+            setShowAuditModal(true);
+        } catch (err) {
+            console.error(err);
+            alert('Failed to load audit history');
+        }
+    };
+
+    const handleStatusToggle = async (user) => {
+        const newStatus = !user.is_active;
+        if (window.confirm(`Are you sure you want to ${newStatus ? 'activate' : 'deactivate'} this user?`)) {
+            try {
+                await axios.put(`http://localhost:5000/api/admin/users/${user.id}`, { ...user, is_active: newStatus }, config);
+                fetchUsers();
+            } catch (err) {
+                console.error(err);
+                alert('Failed to update status');
             }
         }
     };
@@ -164,11 +210,20 @@ const AdminDashboard = () => {
     };
 
     const handleUserFormSubmit = async () => {
+        // MD Validation (Frontend Check)
+        if (userFormData.manager_level === 'md' && userFormData.is_active) {
+            const existingMD = users.find(u => u.manager_level === 'md' && u.is_active && u.id !== userFormData.id);
+            if (existingMD) {
+                alert('Only one Managing Director can be active at a time.');
+                return;
+            }
+        }
+
         try {
             if (userModalMode === 'add') {
-                await axios.post('http://localhost:5000/api/admin/users', userFormData);
+                await axios.post('http://localhost:5000/api/admin/users', userFormData, config);
             } else {
-                await axios.put(`http://localhost:5000/api/admin/users/${userFormData.id}`, userFormData);
+                await axios.put(`http://localhost:5000/api/admin/users/${userFormData.id}`, userFormData, config);
             }
             setShowUserModal(false);
             fetchUsers();
@@ -178,11 +233,47 @@ const AdminDashboard = () => {
         }
     };
 
+    const filteredUsers = users.filter(u => {
+        const matchesRole = roleFilter ? u.manager_level === roleFilter : true;
+        const matchesDept = deptFilter ? u.department_id === parseInt(deptFilter) : true;
+        const matchesStatus = statusFilter ? (statusFilter === 'active' ? u.is_active : !u.is_active) : true;
+        return matchesRole && matchesDept && matchesStatus;
+    });
+
     return (
         <div className="container mt-4">
             <div className="d-flex justify-content-between align-items-center mb-3">
                 <h2>Admin Dashboard</h2>
-                <Button variant="success" onClick={handleAddUserClick}>+ Add New User</Button>
+                <div>
+                    <Button variant="outline-info" className="me-2" onClick={fetchUsers}>Refresh</Button>
+                    <Button variant="success" onClick={handleAddUserClick}>+ Add New User</Button>
+                </div>
+            </div>
+
+            <div className="row mb-3 g-2">
+                <div className="col-md-3">
+                    <Form.Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+                        <option value="">All Roles</option>
+                        <option value="none">Regular Employee</option>
+                        <option value="sub_department">Line Manager</option>
+                        <option value="department">Head of Department</option>
+                        <option value="operation">Operations Manager</option>
+                        <option value="md">Managing Director</option>
+                    </Form.Select>
+                </div>
+                <div className="col-md-3">
+                    <Form.Select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+                        <option value="">All Departments</option>
+                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </Form.Select>
+                </div>
+                <div className="col-md-3">
+                    <Form.Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                        <option value="">All Statuses</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </Form.Select>
+                </div>
             </div>
 
             <Table striped bordered hover responsive>
@@ -192,19 +283,30 @@ const AdminDashboard = () => {
                         <th>Role / Level</th>
                         <th>Dept / Sub-Dept</th>
                         <th>Job Title</th>
+                        <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {users.map(user => (
-                        <tr key={user.id}>
+                    {filteredUsers.map(user => (
+                        <tr key={user.id} className={!user.is_active ? 'table-secondary' : ''}>
                             <td>
                                 <strong>{user.full_name}</strong><br />
                                 <small className="text-muted">{user.email}</small>
                             </td>
                             <td>
                                 {user.role}<br />
-                                <Badge bg="secondary">{user.manager_level}</Badge>
+                                <Badge bg={
+                                    user.manager_level === 'md' ? 'danger' :
+                                        user.manager_level === 'operation' ? 'warning' :
+                                            user.manager_level === 'department' ? 'primary' :
+                                                user.manager_level === 'sub_department' ? 'info' : 'secondary'
+                                }>
+                                    {user.manager_level === 'md' ? 'Managing Director' :
+                                        user.manager_level === 'operation' ? 'Ops Manager' :
+                                            user.manager_level === 'department' ? 'HoD' :
+                                                user.manager_level === 'sub_department' ? 'Line Manager' : 'Employee'}
+                                </Badge>
                             </td>
                             <td>
                                 {user.department_name || '-'} <br />
@@ -212,13 +314,21 @@ const AdminDashboard = () => {
                             </td>
                             <td>{user.job_title || '-'}</td>
                             <td>
+                                <Badge bg={user.is_active ? 'success' : 'danger'} style={{ cursor: 'pointer' }} onClick={() => handleStatusToggle(user)}>
+                                    {user.is_active ? 'Active' : 'Inactive'}
+                                </Badge>
+                            </td>
+                            <td>
                                 <Button variant="outline-primary" size="sm" className="me-2 mb-1" onClick={() => handleEditUserClick(user)}>
                                     Edit
+                                </Button>
+                                <Button variant="outline-info" size="sm" className="me-2 mb-1" onClick={() => handleViewAuditHistory(user)}>
+                                    History
                                 </Button>
                                 {user.role !== 'admin' && (
                                     <>
                                         <Button variant="outline-success" size="sm" className="me-2 mb-1" onClick={() => handlePromoteClick(user)}>
-                                            Allocate Line Manager
+                                            Allocate LM
                                         </Button>
                                         <Button variant="outline-danger" size="sm" className="mb-1" onClick={() => handleDeleteUserClick(user.id)}>
                                             Delete
@@ -294,10 +404,31 @@ const AdminDashboard = () => {
                         <Form.Group className="mb-3">
                             <Form.Label>Manager Level</Form.Label>
                             <Form.Select name="manager_level" value={userFormData.manager_level} onChange={handleUserFormChange}>
-                                <option value="none">Employee (None)</option>
+                                <option value="none">Regular Employee</option>
                                 <option value="sub_department">Line Manager</option>
                                 <option value="department">Head of Department</option>
-                                <option value="operation">Operation Manager</option>
+                                <option value="operation">Operations Manager</option>
+                                <option value="md">Managing Director</option>
+                                <option value="board">Board Member</option>
+                            </Form.Select>
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Check
+                                type="switch"
+                                id="is-active-switch"
+                                label="User Account Active"
+                                name="is_active"
+                                checked={userFormData.is_active}
+                                onChange={(e) => setUserFormData({ ...userFormData, is_active: e.target.checked })}
+                            />
+                        </Form.Group>
+                        <Form.Group className="mb-3">
+                            <Form.Label>Line Manager</Form.Label>
+                            <Form.Select name="line_manager_id" value={userFormData.line_manager_id} onChange={handleUserFormChange}>
+                                <option value="">Select Line Manager</option>
+                                {users.filter(u => u.id !== userFormData.id).map(u => (
+                                    <option key={u.id} value={u.id}>{u.full_name} ({u.role} - {u.manager_level})</option>
+                                ))}
                             </Form.Select>
                         </Form.Group>
                         <Form.Group className="mb-3">
@@ -327,6 +458,46 @@ const AdminDashboard = () => {
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setShowUserModal(false)}>Cancel</Button>
                     <Button variant="primary" onClick={handleUserFormSubmit}>{userModalMode === 'add' ? 'Create' : 'Save Changes'}</Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Audit History Modal */}
+            <Modal show={showAuditModal} onHide={() => setShowAuditModal(false)} size="lg">
+                <Modal.Header closeButton>
+                    <Modal.Title>Audit History - {auditUser?.full_name}</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Table striped bordered hover size="sm">
+                        <thead>
+                            <tr>
+                                <th>Date (UTC)</th>
+                                <th>Action</th>
+                                <th>Admin</th>
+                                <th>Changes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {auditLogs.length === 0 ? (
+                                <tr><td colSpan="4" className="text-center">No history found</td></tr>
+                            ) : (
+                                auditLogs.map(log => (
+                                    <tr key={log.id}>
+                                        <td>{new Date(log.created_at).toLocaleString()}</td>
+                                        <td><Badge bg={log.action === 'DEACTIVATED' ? 'danger' : log.action === 'CREATED' ? 'success' : 'info'}>{log.action}</Badge></td>
+                                        <td>{log.admin_name}</td>
+                                        <td>
+                                            <pre style={{ fontSize: '0.75rem', margin: 0 }}>
+                                                {JSON.stringify(log.changed_fields, null, 2)}
+                                            </pre>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </Table>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowAuditModal(false)}>Close</Button>
                 </Modal.Footer>
             </Modal>
         </div>

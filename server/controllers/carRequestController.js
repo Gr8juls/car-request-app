@@ -16,33 +16,57 @@ exports.createRequest = async (req, res) => {
     try {
         let status = 'pending';
 
-        // Fetch user's manager_level to set initial status
-        // If requester is a Line Manager or Department Head, auto-approve their own level
-        const [userRows] = await db.query('SELECT manager_level FROM users WHERE id = ?', [req.user.id]);
+        // Fetch user's manager_level and line_manager_id
+        const [userRows] = await db.query('SELECT manager_level, line_manager_id FROM users WHERE id = ?', [req.user.id]);
+        let assigned_to = null;
+
         if (userRows.length > 0) {
-            const manager_level = userRows[0].manager_level;
+            const { manager_level, line_manager_id } = userRows[0];
+
+            // Set default assigned_to to line_manager_id (can be overridden below)
+            assigned_to = line_manager_id;
+
             if (manager_level === 'sub_department') {
-                // Line Manager's request bypasses Line Manager approval
                 status = 'approved_by_line_manager';
+                // If auto-approved by LM, next step is Dept Head. 
+                // We should technically assign to Dept Head here if we want to track next step provided we know who that is.
+                // But for Phase 1, we just care about initial assignment validation.
             } else if (manager_level === 'department') {
-                // Department Head's request bypasses both Line Manager and Dept Head approval
                 status = 'approved_by_dept_head';
             } else if (manager_level === 'operation') {
-                // Operation Manager's request bypasses lower levels
                 status = 'approved_by_ops_manager';
+            } else if (manager_level === 'board') {
+                status = 'pending';
+                // Board reports to MD. We assume line_manager_id for Board points to MD.
+            } else if (manager_level === 'md') {
+                status = 'approved_by_md';
+            } else {
+                // Regular Employee
+                if (!line_manager_id) {
+                    return res.status(400).json({ message: 'No Line Manager is assigned. Please contact Admin.' });
+                }
             }
         }
 
         await db.query(
             `INSERT INTO car_requests (
                 user_id, department, location, purpose, car_model, reason, 
-                date_out, time_out, date_back, time_back, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                date_out, time_out, date_back, time_back, status, assigned_to
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 req.user.id, department, location, purpose, car_model, reason,
-                date_out, time_out, date_back, time_back, status
+                date_out, time_out, date_back, time_back, status, assigned_to
             ]
         );
+
+        const requestId = (await db.query('SELECT LAST_INSERT_ID() as id'))[0][0].id;
+
+        // Log creation
+        await db.query(
+            `INSERT INTO request_logs (request_id, actor_id, action, status_after, comment) VALUES (?, ?, 'CREATED', ?, 'Request submitted')`,
+            [requestId, req.user.id, status]
+        );
+
         res.status(201).json({ message: 'Car request created successfully' });
     } catch (error) {
         console.error(error);
@@ -100,10 +124,11 @@ exports.getRequests = async (req, res) => {
             if (manager_level === 'sub_department') {
                 // Line Manager sees requests from their direct reports (using line_manager_id)
                 query = `
-                    SELECT r.*, u.full_name, u.manager_level as requester_manager_level
+                    SELECT r.*, u.full_name, u.manager_level as requester_manager_level, m.full_name as assigned_to_name
                     FROM car_requests r 
                     JOIN users u ON r.user_id = u.id 
-                    WHERE u.line_manager_id = ? 
+                    LEFT JOIN users m ON r.assigned_to = m.id
+                    WHERE r.assigned_to = ? 
                     ORDER BY r.created_at DESC
                 `;
                 params = [req.user.id];
@@ -139,11 +164,25 @@ exports.getRequests = async (req, res) => {
                     FROM car_requests r 
                     JOIN users u ON r.user_id = u.id 
                     WHERE r.status IN ('approved_by_dept_head', 'approved_by_ops_manager', 'approved_by_hc')
-                    AND u.manager_level != 'none' 
+                    AND u.manager_level NOT IN ('none', 'board', 'md') 
                     ORDER BY r.created_at DESC
                 `;
-                // Filter: u.manager_level != 'none' ensures we only see the Manager->DH->Ops path requests
                 params = [];
+            } else if (manager_level === 'md') {
+                // MD sees requests from Board Members
+                query = `
+                    SELECT r.*, u.full_name, u.manager_level as requester_manager_level, m.full_name as assigned_to_name
+                    FROM car_requests r 
+                    JOIN users u ON r.user_id = u.id 
+                    LEFT JOIN users m ON r.assigned_to = m.id
+                    WHERE r.assigned_to = ?
+                    ORDER BY r.created_at DESC
+                `;
+                params = [req.user.id];
+            } else if (manager_level === 'board') {
+                // Board member sees their own requests
+                query = 'SELECT r.*, u.full_name, u.manager_level as requester_manager_level FROM car_requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = ? ORDER BY r.created_at DESC';
+                params = [req.user.id];
             } else {
                 // Fallback for employee with manager_level none (their own only)
                 query = 'SELECT r.*, u.full_name, u.manager_level as requester_manager_level FROM car_requests r JOIN users u ON r.user_id = u.id WHERE r.user_id = ? ORDER BY r.created_at DESC';
@@ -206,7 +245,7 @@ exports.updateStatus = async (req, res) => {
     try {
         // Fetch current request and requester details
         const [requestRows] = await db.query(`
-            SELECT r.id, r.status, r.user_id, u.department_id, u.sub_department_id, u.manager_level as requester_manager_level
+            SELECT r.id, r.status, r.user_id, r.assigned_to, u.department_id, u.sub_department_id, u.manager_level as requester_manager_level
             FROM car_requests r 
             JOIN users u ON r.user_id = u.id 
             WHERE r.id = ?
@@ -215,6 +254,17 @@ exports.updateStatus = async (req, res) => {
         if (requestRows.length === 0) return res.status(404).json({ message: 'Request not found' });
 
         const currentRequest = requestRows[0];
+
+        // Fetch logs
+        const [logs] = await db.query(`
+            SELECT l.*, u.full_name as actor_name 
+            FROM request_logs l 
+            JOIN users u ON l.actor_id = u.id 
+            WHERE l.request_id = ? 
+            ORDER BY l.created_at ASC
+        `, [requestId]);
+
+        currentRequest.logs = logs;
         const currentStatus = currentRequest.status;
 
         let updateQuery = 'UPDATE car_requests SET status = ?';
@@ -230,11 +280,25 @@ exports.updateStatus = async (req, res) => {
             // Path 2: Line Manager -> Dept Head -> HC
 
             if (status === 'approved_by_hc') {
-                const isEmployeePathOk = (currentRequest.requester_manager_level === 'none' && (currentStatus === 'approved_by_line_manager' || currentStatus === 'pending'));
-                // Manager path now requires Ops Manager approval
-                const isManagerPathOk = (currentRequest.requester_manager_level !== 'none' && currentStatus === 'approved_by_ops_manager');
+                // Path 1: Employee -> Line Manager -> HC
+                const isEmployeePathOk = (currentRequest.requester_manager_level === 'none' && currentStatus === 'approved_by_line_manager');
 
-                if (!isEmployeePathOk && !isManagerPathOk && currentStatus !== 'approved_by_hc') {
+                // Path 2: Line Manager -> Head of Department -> HC
+                const isLMPathOk = (currentRequest.requester_manager_level === 'sub_department' && currentStatus === 'approved_by_dept_head');
+
+                // Path 3: Head of Department -> Operation Manager -> HC
+                const isDHPathOk = (currentRequest.requester_manager_level === 'department' && currentStatus === 'approved_by_ops_manager');
+
+                // Path 4: Operation Manager -> Managing Director -> HC
+                const isOMPathOk = (currentRequest.requester_manager_level === 'operation' && currentStatus === 'approved_by_md');
+
+                // Board Path (Original): Board -> MD -> HC
+                const isBoardPathOk = (currentRequest.requester_manager_level === 'board' && currentStatus === 'approved_by_md');
+
+                // MD Path
+                const isMDPathOk = (currentRequest.requester_manager_level === 'md' && currentStatus === 'approved_by_md');
+
+                if (!isEmployeePathOk && !isLMPathOk && !isDHPathOk && !isOMPathOk && !isBoardPathOk && !isMDPathOk && currentStatus !== 'approved_by_hc') {
                     return res.status(400).json({ message: 'Request must follow the approved workflow path' });
                 }
             }
@@ -244,15 +308,16 @@ exports.updateStatus = async (req, res) => {
         } else if (approver.manager_level === 'sub_department') {
             // Line Manager (manages specific people directly)
 
-            // Check if this approver is the direct line manager of the requester
-            const [requesterRow] = await db.query('SELECT line_manager_id FROM users WHERE id = ?', [currentRequest.user_id]);
-            if (!requesterRow.length || requesterRow[0].line_manager_id !== req.user.id) {
-                return res.status(403).json({ message: 'You are not the assigned Line Manager for this user' });
+            // Check if this approver is the assigned line manager
+            if (currentRequest.assigned_to !== req.user.id) {
+                return res.status(403).json({ message: 'You are not the assigned approver for this request' });
             }
 
-            // Line Manager only approves 'pending' requests
-            if (status === 'approved_by_line_manager' && currentStatus !== 'pending') {
-                return res.status(400).json({ message: 'Can only approve pending requests' });
+            // Line Manager only approves 'pending' requests from employees
+            if (status === 'approved_by_line_manager') {
+                if (currentStatus !== 'pending' || currentRequest.requester_manager_level !== 'none') {
+                    return res.status(400).json({ message: 'Can only approve pending requests from regular employees' });
+                }
             }
             updateQuery += ', manager_comment = ? WHERE id = ?';
             params.push(comment, requestId);
@@ -263,10 +328,10 @@ exports.updateStatus = async (req, res) => {
             }
 
             // Department Head only approves requests that are 'approved_by_line_manager' 
-            // AND the requester is a Line Manager (as per current workflow LM -> DH -> HC)
+            // AND the requester is a Line Manager
             if (status === 'approved_by_dept_head') {
-                if (currentStatus !== 'approved_by_line_manager' || currentRequest.requester_manager_level === 'none') {
-                    return res.status(400).json({ message: 'Request does not require Manager of Managers approval' });
+                if (currentStatus !== 'approved_by_line_manager' || currentRequest.requester_manager_level !== 'sub_department') {
+                    return res.status(400).json({ message: 'Can only approve requests from Line Managers that have started' });
                 }
             }
             updateQuery += ', manager_comment = ? WHERE id = ?';
@@ -274,10 +339,25 @@ exports.updateStatus = async (req, res) => {
         } else if (approver.manager_level === 'operation') {
             // Operation Manager
 
-            // Only approves requests that are 'approved_by_dept_head'
+            // Only approves requests that are 'approved_by_dept_head' from Department Heads
             if (status === 'approved_by_ops_manager') {
-                if (currentStatus !== 'approved_by_dept_head') {
-                    return res.status(400).json({ message: 'Request does not require Operation Manager approval yet' });
+                if (currentStatus !== 'approved_by_dept_head' || currentRequest.requester_manager_level !== 'department') {
+                    return res.status(400).json({ message: 'Can only approve requests from Department Heads' });
+                }
+            }
+            updateQuery += ', manager_comment = ? WHERE id = ?';
+            params.push(comment, requestId);
+        } else if (approver.manager_level === 'md') {
+            // Managing Director
+
+            // Only approves requests from Board Members
+            // Approves requests from Board Members (pending) or Operation Managers (approved_by_ops_manager)
+            if (status === 'approved_by_md') {
+                const isBoardOk = (currentRequest.requester_manager_level === 'board' && currentStatus === 'pending');
+                const isOpsOk = (currentRequest.requester_manager_level === 'operation' && currentStatus === 'approved_by_ops_manager');
+
+                if (!isBoardOk && !isOpsOk) {
+                    return res.status(400).json({ message: 'Request is not at the correct stage for MD approval' });
                 }
             }
             updateQuery += ', manager_comment = ? WHERE id = ?';
@@ -287,8 +367,37 @@ exports.updateStatus = async (req, res) => {
         }
 
         await db.query(updateQuery, params);
+
+        // Log action
+        const action = status === 'rejected' ? 'REJECTED' : 'APPROVED';
+        await db.query(
+            `INSERT INTO request_logs (request_id, actor_id, action, status_before, status_after, comment) VALUES (?, ?, ?, ?, ?, ?)`,
+            [requestId, req.user.id, action, currentStatus, status, comment]
+        );
+
         res.json({ message: 'Request updated' });
 
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+// Get logs for a request
+exports.getRequestLogs = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+
+        // Include actor name for display
+        const [logs] = await db.query(`
+            SELECT l.*, u.full_name as actor_name 
+            FROM request_logs l 
+            JOIN users u ON l.actor_id = u.id 
+            WHERE l.request_id = ? 
+            ORDER BY l.created_at ASC
+        `, [requestId]);
+
+        res.json(logs);
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server error' });
