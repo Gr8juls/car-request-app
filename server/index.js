@@ -21,11 +21,13 @@ const authRoutes = require('./routes/auth');
 const carRoutes = require('./routes/carRequests');
 const departmentRoutes = require('./routes/departments');
 const adminRoutes = require('./routes/admin');
+const notificationRoutes = require('./routes/notifications');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/cars', carRoutes);
 app.use('/api/departments', departmentRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);

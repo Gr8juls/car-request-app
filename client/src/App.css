@@ -10,3 +10,20 @@
 .navbar-brand {
     font-weight: bold;
 }
+
+.notification-bell {
+    cursor: pointer;
+}
+
+.notification-bell:hover {
+    opacity: 0.8;
+}
+
+.notification-menu .dropdown-item:active {
+    background-color: #f8f9fa;
+    color: inherit;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}

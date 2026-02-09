@@ -51,11 +51,10 @@ const HCDashboard = ({ user }) => {
 
     const fetchDrivers = async () => {
         try {
-            // Fetch all users and filter for drivers. 
-            // Note: Uses admin route which is currently public/unprotected in this setup for simplicity.
-            // Ideally should be a dedicated authenticated route.
-            const res = await axios.get('http://localhost:5000/api/admin/users');
-            setDrivers(res.data.filter(u => u.role === 'driver'));
+            // Fetch only drivers using the dedicated carRequests endpoint
+            const config = { headers: { 'x-auth-token': user.token } };
+            const res = await axios.get('http://localhost:5000/api/cars/drivers', config);
+            setDrivers(res.data);
         } catch (err) {
             console.error(err);
         }

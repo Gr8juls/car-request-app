@@ -9,6 +9,7 @@ import Login from './components/Login';
 import RequestForm from './components/RequestForm';
 import HCDashboard from './components/HCDashboard';
 import AdminDashboard from './components/AdminDashboard';
+import Register from './components/Register';
 
 
 
@@ -82,6 +83,7 @@ function App() {
                 <div className="container mt-4">
                     <Routes>
                         <Route path="/login" element={!user ? <Login onLogin={handleLogin} /> : getDashboard()} />
+                        <Route path="/register" element={<Register />} />
                         <Route path="/request" element={user ? <RequestForm user={user} /> : <Navigate to="/login" />} />
                         <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/hc-dashboard" element={user && (user.role === 'hc' || user.department === 'Human Capital') ? <HCDashboard user={user} /> : <Navigate to="/login" />} />

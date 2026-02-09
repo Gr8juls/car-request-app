@@ -369,11 +369,32 @@ exports.updateStatus = async (req, res) => {
         await db.query(updateQuery, params);
 
         // Log action
-        const action = status === 'rejected' ? 'REJECTED' : 'APPROVED';
+        const actionLog = status === 'rejected' ? 'REJECTED' : 'APPROVED';
         await db.query(
             `INSERT INTO request_logs (request_id, actor_id, action, status_before, status_after, comment) VALUES (?, ?, ?, ?, ?, ?)`,
-            [requestId, req.user.id, action, currentStatus, status, comment]
+            [requestId, req.user.id, actionLog, currentStatus, status, comment]
         );
+
+        // --- NEW: Notification Logic ---
+        if (status === 'approved_by_hc' && (approver.role === 'hc' || req.user.department_name === 'Human Capital')) {
+            // 1. Notify Requester
+            const requesterMsg = `Your car request (#${requestId}) for ${currentRequest.car_model} has been approved and allocated. Vehicle: ${vehicle_allocated}, Reg: ${reg_no}, Driver: ${driver_allocated}.`;
+            await db.query(
+                'INSERT INTO notifications (user_id, request_id, message) VALUES (?, ?, ?)',
+                [currentRequest.user_id, requestId, requesterMsg]
+            );
+
+            // 2. Notify Driver (if assigned_driver_id is provided)
+            const assigned_driver_id = req.body.assigned_driver_id;
+            if (assigned_driver_id) {
+                const driverMsg = `New Trip Assignment: You have been assigned to trip #${requestId} (${currentRequest.car_model}) for ${currentRequest.full_name || 'User'}.`;
+                await db.query(
+                    'INSERT INTO notifications (user_id, request_id, message) VALUES (?, ?, ?)',
+                    [assigned_driver_id, requestId, driverMsg]
+                );
+            }
+        }
+        // --- End Notification Logic ---
 
         res.json({ message: 'Request updated' });
 
@@ -403,4 +424,13 @@ exports.getRequestLogs = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
-
+// Get list of drivers (for HC allocation)
+exports.getDrivers = async (req, res) => {
+    try {
+        const [drivers] = await db.query('SELECT id, full_name, email FROM users WHERE role = "driver" AND is_active = 1');
+        res.json(drivers);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
