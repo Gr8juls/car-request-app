@@ -434,3 +434,53 @@ exports.getDrivers = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+// Mark trip as completed (Driver action)
+exports.completeTrip = async (req, res) => {
+    try {
+        const requestId = req.params.id;
+
+        // Verify request exists and is assigned to this driver
+        const [requestRows] = await db.query('SELECT * FROM car_requests WHERE id = ?', [requestId]);
+        if (requestRows.length === 0) return res.status(404).json({ message: 'Request not found' });
+
+        const request = requestRows[0];
+
+        // Authorization check: Only assigned driver or HC/Admin can complete
+        if (req.user.role !== 'admin' && req.user.role !== 'hc' && request.assigned_driver_id !== req.user.id) {
+            return res.status(403).json({ message: 'Not authorized to complete this trip' });
+        }
+
+        // Only approved trips can be completed
+        if (request.status !== 'approved_by_hc') {
+            return res.status(400).json({ message: 'Only HC approved trips can be marked as completed' });
+        }
+
+        await db.query('UPDATE car_requests SET status = ? WHERE id = ?', ['completed', requestId]);
+
+        // Log action
+        await db.query(
+            'INSERT INTO request_logs (request_id, actor_id, action, status_before, status_after, comment) VALUES (?, ?, ?, ?, ?, ?)',
+            [requestId, req.user.id, 'COMPLETED', request.status, 'completed', 'Trip marked as completed by driver.']
+        );
+
+        // Notify requester and HC
+        const [requesterRows] = await db.query('SELECT full_name FROM users WHERE id = ?', [request.user_id]);
+        const requesterName = requesterRows[0]?.full_name || 'User';
+
+        const requesterMsg = `Your trip (#${requestId}) has been marked as completed by the driver. Thank you!`;
+        await db.query('INSERT INTO notifications (user_id, request_id, message) VALUES (?, ?, ?)', [request.user_id, requestId, requesterMsg]);
+
+        // Notify HC (optional but good for reporting)
+        // Find all HC users
+        const [hcUsers] = await db.query('SELECT id FROM users WHERE role = "hc"');
+        for (const hc of hcUsers) {
+            const hcMsg = `Trip #${requestId} for ${requesterName} has been marked as completed by driver.`;
+            await db.query('INSERT INTO notifications (user_id, request_id, message) VALUES (?, ?, ?)', [hc.id, requestId, hcMsg]);
+        }
+
+        res.json({ message: 'Trip marked as completed successfully' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Server error' });
+    }
+};
