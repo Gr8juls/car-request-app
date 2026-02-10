@@ -7,6 +7,7 @@ router.post('/', auth, carRequestController.createRequest);
 router.get('/', auth, carRequestController.getRequests);
 router.get('/drivers', auth, carRequestController.getDrivers);
 router.put('/:id', auth, carRequestController.updateStatus);
+router.put('/:id/complete', auth, carRequestController.completeTrip);
 router.get('/:id/logs', auth, carRequestController.getRequestLogs);
 
 module.exports = router;

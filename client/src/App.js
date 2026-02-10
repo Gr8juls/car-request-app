@@ -70,9 +70,9 @@ function App() {
 
     const getDashboard = () => {
         if (!user) return <Navigate to="/login" />;
-        if (user.role === 'hc' || user.department === 'Human Capital') return <Navigate to="/hc-dashboard" />;
         if (user.role === 'admin') return <Navigate to="/admin-dashboard" />;
         if (user.role === 'driver') return <Navigate to="/driver-dashboard" />;
+        if (user.role === 'hc' || user.department === 'Human Capital') return <Navigate to="/hc-dashboard" />;
         return <Dashboard user={user} />;
     };
 
