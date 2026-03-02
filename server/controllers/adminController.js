@@ -192,11 +192,11 @@ exports.updateUser = async (req, res) => {
             email || before.email,
             role || before.role,
             full_name || before.full_name,
-            department_id || before.department_id,
-            sub_department_id || before.sub_department_id,
+            (department_id === '' || department_id === null) ? null : (department_id || before.department_id),
+            (sub_department_id === '' || sub_department_id === null) ? null : (sub_department_id || before.sub_department_id),
             job_title || before.job_title,
             manager_level || before.manager_level,
-            line_manager_id !== undefined ? line_manager_id : before.line_manager_id,
+            (line_manager_id === '' || line_manager_id === null) ? null : (line_manager_id !== undefined ? line_manager_id : before.line_manager_id),
             is_active !== undefined ? is_active : before.is_active
         ];
 
@@ -252,7 +252,7 @@ exports.updateUser = async (req, res) => {
             await connection.query(`
                 UPDATE car_requests 
                 SET assigned_to = ? 
-                WHERE user_id = ? AND status = 'pending'
+                WHERE user_id = ? AND status IN ('pending', 'approved_by_line_manager', 'approved_by_dept_head', 'approved_by_ops_manager')
              `, [line_manager_id, id]);
         }
 

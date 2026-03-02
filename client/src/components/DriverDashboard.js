@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Badge, Card } from 'react-bootstrap';
+import { Table, Button, Badge, Card, Modal, Form } from 'react-bootstrap';
 import axios from 'axios';
 
 const DriverDashboard = ({ user }) => {
     const [requests, setRequests] = useState([]);
+    const [showModal, setShowModal] = useState(false);
+    const [selectedRequest, setSelectedRequest] = useState(null);
+    const [completionData, setCompletionData] = useState({
+        trip_confirmed: false
+    });
 
     const fetchRequests = async () => {
         try {
@@ -12,22 +17,43 @@ const DriverDashboard = ({ user }) => {
                     'x-auth-token': user.token
                 }
             };
-            const res = await axios.get('http://localhost:5000/api/cars', config);
+            const res = await axios.get(`/api/cars`, config);
             setRequests(res.data);
         } catch (err) {
             console.error(err);
         }
     };
 
-    const handleComplete = async (requestId) => {
-        if (!window.confirm('Are you sure you want to mark this trip as finished?')) return;
+    const handleStart = async (req) => {
+        if (!window.confirm(`Are you sure you want to start the trip to ${req.location}?`)) return;
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.put(`/api/cars/${req.id}/start`, {}, config);
+            fetchRequests();
+        } catch (err) {
+            console.error(err);
+            alert(err.response?.data?.message || 'Failed to start trip');
+        }
+    };
+
+    const handleComplete = (req) => {
+        setSelectedRequest(req);
+        setShowModal(true);
+    };
+
+    const submitComplete = async () => {
+
         try {
             const config = {
                 headers: {
                     'x-auth-token': user.token
                 }
             };
-            await axios.put(`http://localhost:5000/api/cars/${requestId}/complete`, {}, config);
+            await axios.put(`/api/cars/${selectedRequest.id}/complete`, completionData, config);
+            setShowModal(false);
+            setCompletionData({
+                trip_confirmed: false
+            });
             fetchRequests();
         } catch (err) {
             console.error(err);
@@ -88,14 +114,23 @@ const DriverDashboard = ({ user }) => {
                                             <small className="text-muted text-uppercase">{req.reg_no}</small>
                                         </td>
                                         <td>
-                                            <Badge bg={req.status === 'completed' ? 'secondary' : 'success'}>
-                                                {req.status === 'completed' ? 'Completed' : 'Assigned/Active'}
-                                            </Badge>
+                                            {req.status === 'completed' ? (
+                                                <Badge bg="secondary">Completed</Badge>
+                                            ) : req.status === 'in_progress' ? (
+                                                <Badge bg="warning">In Progress</Badge>
+                                            ) : (
+                                                <Badge bg="info">Assigned / Waiting</Badge>
+                                            )}
                                         </td>
                                         <td>
                                             {req.status === 'approved_by_hc' && (
-                                                <Button size="sm" variant="success" onClick={() => handleComplete(req.id)}>
-                                                    Finish Ride
+                                                <Button size="sm" variant="primary" onClick={() => handleStart(req)}>
+                                                    Start Trip
+                                                </Button>
+                                            )}
+                                            {req.status === 'in_progress' && (
+                                                <Button size="sm" variant="success" onClick={() => handleComplete(req)}>
+                                                    Complete Trip
                                                 </Button>
                                             )}
                                         </td>
@@ -106,8 +141,63 @@ const DriverDashboard = ({ user }) => {
                     </Table>
                 </Card.Body>
             </Card>
+
+            <Modal show={showModal} onHide={() => setShowModal(false)}>
+                <Modal.Header closeButton className="bg-success text-white">
+                    <Modal.Title>Complete Trip Confirmation</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {selectedRequest && (
+                        <div className="mb-4 p-3 bg-light rounded border">
+                            <h6 className="text-muted text-uppercase small fw-bold mb-2">Trip Summary</h6>
+                            <div className="row g-2">
+                                <div className="col-6">
+                                    <small className="text-muted d-block">Requester</small>
+                                    <strong>{selectedRequest.full_name}</strong>
+                                </div>
+                                <div className="col-6">
+                                    <small className="text-muted d-block">Destination</small>
+                                    <strong>{selectedRequest.location}</strong>
+                                </div>
+                                <div className="col-12 mt-2">
+                                    <small className="text-muted d-block">Purpose</small>
+                                    <strong>{selectedRequest.purpose}</strong>
+                                </div>
+                                <div className="col-12 mt-2">
+                                    <small className="text-muted d-block">Scheduled Time</small>
+                                    <strong>{selectedRequest.time_out} - {selectedRequest.time_back}</strong>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <Form>
+
+                        <div className="p-3 bg-warning bg-opacity-10 border border-warning rounded">
+                            <Form.Check
+                                type="checkbox"
+                                id="trip-confirmation"
+                                label="I confirm that I went to the requested destination and returned as scheduled."
+                                className="fw-bold"
+                                checked={completionData.trip_confirmed}
+                                onChange={(e) => setCompletionData({ ...completionData, trip_confirmed: e.target.checked })}
+                            />
+                        </div>
+                    </Form>
+                </Modal.Body>
+                <Modal.Footer className="bg-light">
+                    <Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button>
+                    <Button
+                        variant="success"
+                        onClick={submitComplete}
+                        disabled={!completionData.trip_confirmed}
+                    >
+                        Confirm & Complete Trip
+                    </Button>
+                </Modal.Footer>
+            </Modal>
         </div>
     );
 };
 
 export default DriverDashboard;
+

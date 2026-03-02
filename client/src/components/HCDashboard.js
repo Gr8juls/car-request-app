@@ -1,11 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Button, Badge, Form, Modal, Tabs, Tab, Card, Row, Col, Dropdown, ButtonGroup } from 'react-bootstrap';
+import { Table, Button, Badge, Form, Modal, Tabs, Tab, Card, Row, Col } from 'react-bootstrap';
 import axios from 'axios';
-import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
-import * as XLSX from 'xlsx';
-import { Document, Packer, Paragraph, TextRun, Table as DocxTable, TableRow, TableCell, WidthType, AlignmentType, HeadingLevel } from 'docx';
-import { saveAs } from 'file-saver';
 
 const HCDashboard = ({ user }) => {
     const [requests, setRequests] = useState([]);
@@ -15,6 +10,8 @@ const HCDashboard = ({ user }) => {
     const [currentRequest, setCurrentRequest] = useState(null);
     const [action, setAction] = useState(''); // 'approve' or 'reject'
     const [comment, setComment] = useState('');
+    const [viewModal, setViewModal] = useState(false);
+    const [requestDetails, setRequestDetails] = useState(null);
     const [allocation, setAllocation] = useState({
         driver_allocated: '',
         assigned_driver_id: '',
@@ -35,9 +32,14 @@ const HCDashboard = ({ user }) => {
     const fetchRequests = async () => {
         try {
             const config = { headers: { 'x-auth-token': user.token } };
-            const res = await axios.get('http://localhost:5000/api/cars', config);
-            // Filter requests pending HC action (approved by Dept Head) OR still in early stages
-            setRequests(res.data.filter(r => ['pending', 'approved_by_line_manager', 'approved_by_dept_head'].includes(r.status)));
+            const res = await axios.get('/api/cars', config);
+            // Filter requests pending HC action based on requester level
+            setRequests(res.data.filter(r =>
+                (r.requester_manager_level === 'none' && r.status === 'approved_by_line_manager') ||
+                (r.requester_manager_level === 'sub_department' && r.status === 'approved_by_dept_head') ||
+                (r.requester_manager_level === 'department' && r.status === 'approved_by_ops_manager') ||
+                (['operation', 'board', 'md'].includes(r.requester_manager_level) && r.status === 'approved_by_md')
+            ));
         } catch (err) {
             console.error(err);
         }
@@ -47,8 +49,13 @@ const HCDashboard = ({ user }) => {
         try {
             const config = { headers: { 'x-auth-token': user.token } };
             const queryParams = new URLSearchParams(filters).toString();
-            const res = await axios.get(`http://localhost:5000/api/cars?${queryParams}`, config);
-            setReportData(res.data);
+            const res = await axios.get(`/api/cars?${queryParams}`, config);
+
+            // Filter out requests still pending approval - only show completed workflow items
+            const completedRequests = res.data.filter(r =>
+                ['approved_by_hc', 'completed', 'rejected'].includes(r.status)
+            );
+            setReportData(completedRequests);
         } catch (err) {
             console.error(err);
         }
@@ -58,161 +65,51 @@ const HCDashboard = ({ user }) => {
         try {
             // Fetch only drivers using the dedicated carRequests endpoint
             const config = { headers: { 'x-auth-token': user.token } };
-            const res = await axios.get('http://localhost:5000/api/cars/drivers', config);
+            const res = await axios.get('/api/cars/drivers', config);
             setDrivers(res.data);
         } catch (err) {
             console.error(err);
         }
     };
 
-    const handleExport = (format) => {
+    const handleExport = () => {
         if (reportData.length === 0) {
             alert("No data to export");
             return;
         }
 
-        switch (format) {
-            case 'csv':
-                exportToCSV();
-                break;
-            case 'pdf':
-                exportToPDF();
-                break;
-            case 'excel':
-                exportToExcel();
-                break;
-            case 'word':
-                exportToWord();
-                break;
-            default:
-                exportToCSV();
-        }
-    };
-
-    const exportToCSV = () => {
         const headers = ["Request ID", "Date Submitted", "User", "Department", "Trip Date", "Time Out", "Return Date", "Time Back", "Car Model", "Purpose", "Status", "Allocated Vehicle", "Reg No", "Driver"];
+
         const csvContent = [
             headers.join(","),
-            ...reportData.map(req => [
-                req.id,
-                new Date(req.created_at).toLocaleDateString(),
-                `"${req.full_name}"`,
-                `"${req.department}"`,
-                new Date(req.date_out).toLocaleDateString(),
-                req.time_out,
-                new Date(req.date_back).toLocaleDateString(),
-                req.time_back,
-                `"${req.car_model}"`,
-                `"${req.purpose}"`,
-                req.status,
-                `"${req.vehicle_allocated || ''}"`,
-                `"${req.reg_no || ''}"`,
-                `"${req.driver_allocated || ''}"`
-            ].join(","))
+            ...reportData.map(req => {
+                return [
+                    req.id,
+                    new Date(req.created_at).toLocaleDateString(),
+                    `"${req.full_name}"`,
+                    `"${req.department}"`,
+                    new Date(req.date_out).toLocaleDateString(),
+                    req.time_out,
+                    new Date(req.date_back).toLocaleDateString(),
+                    req.time_back,
+                    `"${req.car_model}"`,
+                    `"${req.purpose}"`,
+                    req.status,
+                    `"${req.vehicle_allocated || ''}"`,
+                    `"${req.reg_no || ''}"`,
+                    `"${req.driver_allocated || ''}"`
+                ].join(",");
+            })
         ].join("\n");
 
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-        saveAs(blob, `car_requests_report_${new Date().toISOString().slice(0, 10)}.csv`);
-    };
-
-    const exportToPDF = () => {
-        const doc = new jsPDF();
-        doc.setFontSize(18);
-        doc.text("Car Request Report", 14, 22);
-        doc.setFontSize(11);
-        doc.setTextColor(100);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
-
-        const tableColumn = ["Date", "User", "Dept", "Car Model", "Status", "Driver"];
-        const tableRows = reportData.map(req => [
-            new Date(req.created_at).toLocaleDateString(),
-            req.full_name,
-            req.department,
-            req.car_model,
-            req.status.replace(/_/g, ' '),
-            req.driver_allocated || 'N/A'
-        ]);
-
-        doc.autoTable({
-            head: [tableColumn],
-            body: tableRows,
-            startY: 35,
-            theme: 'striped',
-            headStyles: { fillColor: [0, 150, 57] } // Old Mutual Green
-        });
-
-        doc.save(`car_requests_report_${new Date().toISOString().slice(0, 10)}.pdf`);
-    };
-
-    const exportToExcel = () => {
-        const worksheet = XLSX.utils.json_to_sheet(reportData.map(req => ({
-            "Request ID": req.id,
-            "Date Submitted": new Date(req.created_at).toLocaleDateString(),
-            "User": req.full_name,
-            "Department": req.department,
-            "Trip Date": new Date(req.date_out).toLocaleDateString(),
-            "Time Out": req.time_out,
-            "Return Date": new Date(req.date_back).toLocaleDateString(),
-            "Time Back": req.time_back,
-            "Car Model": req.car_model,
-            "Purpose": req.purpose,
-            "Status": req.status,
-            "Allocated Vehicle": req.vehicle_allocated,
-            "Reg No": req.reg_no,
-            "Driver": req.driver_allocated
-        })));
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Requests");
-        XLSX.writeFile(workbook, `car_requests_report_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    };
-
-    const exportToWord = async () => {
-        const tableHeaderRows = new TableRow({
-            children: [
-                new TableCell({ children: [new Paragraph({ text: "Date", style: "HeaderStyle" })] }),
-                new TableCell({ children: [new Paragraph({ text: "User", style: "HeaderStyle" })] }),
-                new TableCell({ children: [new Paragraph({ text: "Department", style: "HeaderStyle" })] }),
-                new TableCell({ children: [new Paragraph({ text: "Car Model", style: "HeaderStyle" })] }),
-                new TableCell({ children: [new Paragraph({ text: "Status", style: "HeaderStyle" })] }),
-            ],
-            tableHeader: true,
-        });
-
-        const tableBodyRows = reportData.map(req => new TableRow({
-            children: [
-                new TableCell({ children: [new Paragraph(new Date(req.created_at).toLocaleDateString())] }),
-                new TableCell({ children: [new Paragraph(req.full_name)] }),
-                new TableCell({ children: [new Paragraph(req.department)] }),
-                new TableCell({ children: [new Paragraph(req.car_model)] }),
-                new TableCell({ children: [new Paragraph(req.status.replace(/_/g, ' '))] }),
-            ],
-        }));
-
-        const table = new DocxTable({
-            rows: [tableHeaderRows, ...tableBodyRows],
-            width: { size: 100, type: WidthType.PERCENTAGE },
-        });
-
-        const doc = new Document({
-            sections: [{
-                children: [
-                    new Paragraph({
-                        text: "Car Request Report",
-                        heading: HeadingLevel.HEADING_1,
-                        alignment: AlignmentType.CENTER,
-                    }),
-                    new Paragraph({
-                        text: `Generated on: ${new Date().toLocaleString()}`,
-                        alignment: AlignmentType.CENTER,
-                    }),
-                    new Paragraph({ text: "" }), // spacer
-                    table,
-                ],
-            }],
-        });
-
-        const blob = await Packer.toBlob(doc);
-        saveAs(blob, `car_requests_report_${new Date().toISOString().slice(0, 10)}.docx`);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", `car_requests_report_${new Date().toISOString().slice(0, 10)}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     useEffect(() => {
@@ -235,11 +132,18 @@ const HCDashboard = ({ user }) => {
     };
 
     const submitAction = async () => {
+        if (action === 'approve') {
+            if (!allocation.vehicle_allocated || !allocation.reg_no || !allocation.assigned_driver_id) {
+                alert('Vehicle, Registration Number, and Driver are all required to approve a request.');
+                return;
+            }
+        }
+
         try {
             const config = { headers: { 'x-auth-token': user.token } };
             let status = action === 'approve' ? 'approved_by_hc' : 'rejected';
 
-            await axios.put(`http://localhost:5000/api/cars/${currentRequest.id}`, {
+            await axios.put(`/api/cars/${currentRequest.id}`, {
                 status,
                 comment,
                 ...allocation
@@ -256,16 +160,74 @@ const HCDashboard = ({ user }) => {
     const getStatusBadge = (status) => {
         switch (status) {
             case 'approved_by_hc': return <Badge bg="success">HC Approved & Allocated</Badge>;
-            case 'approved_by_dept_head': return <Badge bg="info">Manager of Managers Approved</Badge>;
-            case 'approved_by_line_manager': return <Badge bg="primary">Manager of Others Approved</Badge>;
+            case 'completed': return <Badge bg="dark">Trip Completed</Badge>;
+            case 'approved_by_md': return <Badge bg="primary">MD Approved</Badge>;
+            case 'approved_by_ops_manager': return <Badge bg="info">Ops Manager Approved</Badge>;
+            case 'approved_by_dept_head': return <Badge bg="info">Dept Head Approved</Badge>;
+            case 'approved_by_line_manager': return <Badge bg="primary">Line Manager Approved</Badge>;
             case 'rejected': return <Badge bg="danger">Rejected</Badge>;
             default: return <Badge bg="warning">Pending Manager Approval</Badge>;
+        }
+    };
+
+    const handleView = async (request) => {
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            const logsRes = await axios.get(`/api/cars/${request.id}/logs`, config);
+            setRequestDetails({ ...request, logs: logsRes.data });
+            setViewModal(true);
+        } catch (error) {
+            console.error('Error fetching logs:', error);
+            setRequestDetails(request);
+            setViewModal(true);
         }
     };
 
     return (
         <div className="pb-5">
             <h2 className="mb-4" style={{ color: '#009639' }}>HC Dashboard</h2>
+
+            {/* KPI Summary Cards */}
+            <Row className="mb-4">
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-warning h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Pending My Approval</h6>
+                            <h2 className="mb-0 text-warning">{requests.length}</h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-success h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Active alloc. / In Progress</h6>
+                            <h2 className="mb-0 text-success">
+                                {reportData.filter(r => ['approved_by_hc', 'in_progress'].includes(r.status)).length}
+                            </h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-dark h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Completed Trips</h6>
+                            <h2 className="mb-0 text-dark">
+                                {reportData.filter(r => r.status === 'completed').length}
+                            </h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-danger h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Rejected Requests</h6>
+                            <h2 className="mb-0 text-danger">
+                                {reportData.filter(r => r.status === 'rejected').length}
+                            </h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
 
             <Tabs defaultActiveKey="active" className="mb-4 custom-tabs">
                 <Tab eventKey="active" title="Pending My Approval">
@@ -302,21 +264,13 @@ const HCDashboard = ({ user }) => {
                                                 </td>
                                                 <td>{getStatusBadge(req.status)}</td>
                                                 <td>
-                                                    {req.status === 'rejected' ? (
-                                                        <Badge bg="danger">Rejected</Badge>
-                                                    ) : (
-                                                        // HC can approve after LM for Employees, or after DH for Managers
-                                                        ((req.requester_manager_level === 'none' && (req.status === 'approved_by_line_manager' || req.status === 'pending')) ||
-                                                            (req.requester_manager_level !== 'none' && req.status === 'approved_by_dept_head')) ? (
-                                                            <Button size="sm" variant="success" onClick={() => handleAction(req, 'approve')}>Process Allocation</Button>
-                                                        ) : (
-                                                            <span className="small text-muted text-capitalize">
-                                                                {req.status === 'pending' ? 'Pending Manager of Others' :
-                                                                    req.status === 'approved_by_line_manager' ? 'Pending Manager of Managers' :
-                                                                        req.status.replace(/_/g, ' ')}
-                                                            </span>
-                                                        )
-                                                    )}
+                                                    <div className="d-flex align-items-center">
+                                                        <Button size="sm" variant="success" className="me-2" onClick={() => handleAction(req, 'approve')}>Process Allocation</Button>
+                                                        <Button size="sm" variant="danger" className="me-2" onClick={() => handleAction(req, 'reject')}>Reject</Button>
+                                                        <Button size="sm" variant="outline-primary" onClick={() => handleView(req)} title="View History">
+                                                            👁️
+                                                        </Button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
@@ -330,91 +284,100 @@ const HCDashboard = ({ user }) => {
                 <Tab eventKey="report" title="Reports & History">
                     <Card className="shadow-sm border-0">
                         <Card.Body>
-                            <div className="d-flex justify-content-between align-items-center mb-4">
-                                <div>
-                                    <h4 className="mb-1 text-dark fw-bold">Request History</h4>
-                                    <p className="text-muted small mb-0">View and export all car request records</p>
-                                </div>
-                                <Dropdown as={ButtonGroup}>
-                                    <Button variant="success" onClick={() => handleExport('pdf')}>
-                                        <i className="bi bi-download me-2"></i>Export Report
-                                    </Button>
-                                    <Dropdown.Toggle split variant="success" id="dropdown-split-basic" />
-                                    <Dropdown.Menu align="end">
-                                        <Dropdown.Item onClick={() => handleExport('pdf')}>
-                                            <span className="me-2 text-danger">PDF</span> Export as PDF
-                                        </Dropdown.Item>
-                                        <Dropdown.Item onClick={() => handleExport('excel')}>
-                                            <span className="me-2 text-success">EXCEL</span> Export as Excel
-                                        </Dropdown.Item>
-                                        <Dropdown.Item onClick={() => handleExport('word')}>
-                                            <span className="me-2 text-primary">WORD</span> Export as Word
-                                        </Dropdown.Item>
-                                        <Dropdown.Divider />
-                                        <Dropdown.Item onClick={() => handleExport('csv')}>
-                                            <span className="me-2 text-secondary">CSV</span> Export as CSV
-                                        </Dropdown.Item>
-                                    </Dropdown.Menu>
-                                </Dropdown>
+                            <div className="d-flex justify-content-between align-items-center mb-3">
+                                <h5 className="mb-0">Request History</h5>
+                                <Button variant="outline-success" onClick={handleExport}>
+                                    <span className="me-2">⬇</span>Export to CSV
+                                </Button>
                             </div>
+                            <div className="bg-light p-4 rounded mb-4 border">
+                                <div className="d-flex justify-content-between align-items-center mb-3">
+                                    <h6 className="mb-0 text-muted">FILTER & SORT OPTIONS</h6>
+                                    <Button
+                                        variant="outline-secondary"
+                                        size="sm"
+                                        onClick={() => setFilters({
+                                            status: '',
+                                            department: '',
+                                            startDate: '',
+                                            endDate: '',
+                                            sortBy: 'created_at',
+                                            order: 'DESC'
+                                        })}
+                                    >
+                                        Clear Filters
+                                    </Button>
+                                </div>
 
-                            <div className="bg-white p-4 rounded shadow-sm mb-4 border" style={{ backgroundColor: '#f8f9fa' }}>
-                                <Row className="g-4">
+                                <Row className="g-3">
                                     <Col md={3}>
-                                        <Form.Group>
-                                            <Form.Label className="small fw-bold text-uppercase text-muted">Status</Form.Label>
-                                            <Form.Select className="form-select-sm border-0 bg-light" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
-                                                <option value="">All Statuses</option>
-                                                <option value="pending">Pending Manager of Others</option>
-                                                <option value="approved_by_line_manager">Pending Manager of Managers</option>
-                                                <option value="approved_by_dept_head">Pending HC</option>
-                                                <option value="approved_by_hc">HC Approved</option>
-                                                <option value="rejected">Rejected</option>
-                                            </Form.Select>
-                                        </Form.Group>
+                                        <Form.Label className="fw-semibold small">Status</Form.Label>
+                                        <Form.Select
+                                            value={filters.status}
+                                            onChange={e => setFilters({ ...filters, status: e.target.value })}
+                                            size="sm"
+                                        >
+                                            <option value="">All Statuses</option>
+                                            <option value="approved_by_hc">HC Approved & Allocated</option>
+                                            <option value="completed">Trip Completed</option>
+                                            <option value="rejected">Rejected</option>
+                                        </Form.Select>
                                     </Col>
                                     <Col md={3}>
-                                        <Form.Group>
-                                            <Form.Label className="small fw-bold text-uppercase text-muted">Department</Form.Label>
-                                            <Form.Control className="form-control-sm border-0 bg-light" type="text" placeholder="Filter dept..." value={filters.department} onChange={e => setFilters({ ...filters, department: e.target.value })} />
-                                        </Form.Group>
+                                        <Form.Label className="fw-semibold small">Department</Form.Label>
+                                        <Form.Control
+                                            type="text"
+                                            placeholder="Filter by department..."
+                                            value={filters.department}
+                                            onChange={e => setFilters({ ...filters, department: e.target.value })}
+                                            size="sm"
+                                        />
                                     </Col>
                                     <Col md={3}>
-                                        <Form.Group>
-                                            <Form.Label className="small fw-bold text-uppercase text-muted">From Date</Form.Label>
-                                            <Form.Control className="form-control-sm border-0 bg-light" type="date" value={filters.startDate} onChange={e => setFilters({ ...filters, startDate: e.target.value })} />
-                                        </Form.Group>
+                                        <Form.Label className="fw-semibold small">From Date</Form.Label>
+                                        <Form.Control
+                                            type="date"
+                                            value={filters.startDate}
+                                            onChange={e => setFilters({ ...filters, startDate: e.target.value })}
+                                            size="sm"
+                                        />
                                     </Col>
                                     <Col md={3}>
-                                        <Form.Group>
-                                            <Form.Label className="small fw-bold text-uppercase text-muted">To Date</Form.Label>
-                                            <Form.Control className="form-control-sm border-0 bg-light" type="date" value={filters.endDate} onChange={e => setFilters({ ...filters, endDate: e.target.value })} />
-                                        </Form.Group>
+                                        <Form.Label className="fw-semibold small">To Date</Form.Label>
+                                        <Form.Control
+                                            type="date"
+                                            value={filters.endDate}
+                                            onChange={e => setFilters({ ...filters, endDate: e.target.value })}
+                                            size="sm"
+                                        />
+                                    </Col>
+                                </Row>
+
+                                <Row className="g-3 mt-2">
+                                    <Col md={3}>
+                                        <Form.Label className="fw-semibold small">Sort By</Form.Label>
+                                        <Form.Select
+                                            value={filters.sortBy}
+                                            onChange={e => setFilters({ ...filters, sortBy: e.target.value })}
+                                            size="sm"
+                                        >
+                                            <option value="created_at">Submission Date</option>
+                                            <option value="date_out">Trip Date</option>
+                                            <option value="full_name">Requester Name</option>
+                                            <option value="department">Department</option>
+                                            <option value="status">Status</option>
+                                        </Form.Select>
                                     </Col>
                                     <Col md={3}>
-                                        <Form.Group>
-                                            <Form.Label className="small fw-bold text-uppercase text-muted">Sort By</Form.Label>
-                                            <Form.Select className="form-select-sm border-0 bg-light" value={filters.sortBy} onChange={e => setFilters({ ...filters, sortBy: e.target.value })}>
-                                                <option value="created_at">Submission Date</option>
-                                                <option value="date_out">Trip Date</option>
-                                                <option value="car_model">Car Model</option>
-                                                <option value="status">Status</option>
-                                            </Form.Select>
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={3}>
-                                        <Form.Group>
-                                            <Form.Label className="small fw-bold text-uppercase text-muted">Order</Form.Label>
-                                            <Form.Select className="form-select-sm border-0 bg-light" value={filters.order} onChange={e => setFilters({ ...filters, order: e.target.value })}>
-                                                <option value="DESC">Descending</option>
-                                                <option value="ASC">Ascending</option>
-                                            </Form.Select>
-                                        </Form.Group>
-                                    </Col>
-                                    <Col md={6} className="d-flex align-items-end justify-content-end">
-                                        <Button variant="link" className="text-decoration-none text-muted small" onClick={() => setFilters({ status: '', department: '', startDate: '', endDate: '', sortBy: 'created_at', order: 'DESC' })}>
-                                            Reset Filters
-                                        </Button>
+                                        <Form.Label className="fw-semibold small">Order</Form.Label>
+                                        <Form.Select
+                                            value={filters.order}
+                                            onChange={e => setFilters({ ...filters, order: e.target.value })}
+                                            size="sm"
+                                        >
+                                            <option value="DESC">Newest First</option>
+                                            <option value="ASC">Oldest First</option>
+                                        </Form.Select>
                                     </Col>
                                 </Row>
                             </div>
@@ -517,8 +480,100 @@ const HCDashboard = ({ user }) => {
                     </Button>
                 </Modal.Footer>
             </Modal>
+            {/* View Details Modal with Timeline */}
+            <Modal show={viewModal} onHide={() => setViewModal(false)} size="lg">
+                <Modal.Header closeButton>
+                    <Modal.Title>Request Details & History</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {requestDetails && (
+                        <div>
+                            <div className="mb-4">
+                                <h6 className="text-muted small text-uppercase mb-3">Approval Path</h6>
+                                <div className="d-flex justify-content-between mb-2">
+                                    {(() => {
+                                        const getSteps = (level) => {
+                                            switch (level) {
+                                                case 'none': return ['Submitted', 'Line Manager', 'HC Final'];
+                                                case 'sub_department': return ['Submitted', 'Dept Head', 'HC Final'];
+                                                case 'department': return ['Submitted', 'Ops Manager', 'HC Final'];
+                                                case 'operation': return ['Submitted', 'Managing Director', 'HC Final'];
+                                                case 'board': return ['Submitted', 'Managing Director', 'HC Final'];
+                                                case 'md': return ['Submitted', 'HC Final'];
+                                                default: return ['Submitted', 'Manager', 'HC Final'];
+                                            }
+                                        };
+                                        const steps = getSteps(requestDetails.requester_manager_level);
+                                        const currentStepIdx = requestDetails.status === 'pending' ? 0 :
+                                            requestDetails.status === 'approved_by_hc' ? steps.length :
+                                                requestDetails.status === 'rejected' ? -1 : 1;
+
+                                        return steps.map((s, i) => (
+                                            <div key={i} className="text-center" style={{ width: `${100 / steps.length}%` }}>
+                                                <Badge bg={
+                                                    requestDetails.status === 'rejected' && i > 0 ? 'danger' :
+                                                        (currentStepIdx > i || requestDetails.status === 'approved_by_hc') ? 'success' :
+                                                            (currentStepIdx === i ? 'warning' : 'secondary')
+                                                } className="rounded-circle p-2 mb-1">
+                                                    {requestDetails.status === 'rejected' && i > 0 ? '×' : (i + 1)}
+                                                </Badge>
+                                                <br />
+                                                <small className="fw-bold">{s}</small>
+                                            </div>
+                                        ));
+                                    })()}
+                                </div>
+                                <div className="progress" style={{ height: '6px' }}>
+                                    <div className={`progress-bar bg-${requestDetails.status === 'rejected' ? 'danger' : 'success'}`} role="progressbar" style={{
+                                        width: requestDetails.status === 'approved_by_hc' ? '100.001%' :
+                                            requestDetails.status === 'pending' ? '15%' :
+                                                requestDetails.status === 'rejected' ? '100%' : '50%'
+                                    }}></div>
+                                </div>
+                            </div>
+
+                            <Row className="mb-3">
+                                <Col md={6}>
+                                    <p className="mb-1"><strong>Requester:</strong> {requestDetails.full_name}</p>
+                                    <p className="mb-1"><strong>Department:</strong> {requestDetails.department}</p>
+                                    <p className="mb-1"><strong>Purpose:</strong> {requestDetails.purpose}</p>
+                                </Col>
+                                <Col md={6}>
+                                    <p className="mb-1"><strong>Car Model:</strong> {requestDetails.car_model}</p>
+                                    <p className="mb-1"><strong>Destination:</strong> {requestDetails.location}</p>
+                                    <p className="mb-1"><strong>Schedule:</strong> {new Date(requestDetails.date_out).toLocaleDateString()} - {new Date(requestDetails.date_back).toLocaleDateString()}</p>
+                                </Col>
+                            </Row>
+
+                            <h6 className="mt-4 mb-3 border-bottom pb-2">Full Approval History</h6>
+                            <div className="timeline">
+                                {requestDetails.logs && requestDetails.logs.length > 0 ? (
+                                    requestDetails.logs.map((log, index) => (
+                                        <div key={log.id} className="d-flex mb-3">
+                                            <div className="me-3">
+                                                <Badge bg={log.action === 'REJECTED' ? 'danger' : 'success'} className="rounded-circle p-2">
+                                                    {index + 1}
+                                                </Badge>
+                                            </div>
+                                            <div>
+                                                <strong>{log.action}</strong> - <small className="text-muted">{new Date(log.created_at).toLocaleString()}</small>
+                                                <div className="text-muted small">By: {log.actor_name}</div>
+                                                {log.comment && <div className="mt-1 small fst-italic text-secondary">"{log.comment}"</div>}
+                                            </div>
+                                        </div>
+                                    ))
+                                ) : <p className="text-muted small">No logs found.</p>}
+                            </div>
+                        </div>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setViewModal(false)}>Close</Button>
+                </Modal.Footer>
+            </Modal>
         </div>
     );
 };
 
 export default HCDashboard;
+

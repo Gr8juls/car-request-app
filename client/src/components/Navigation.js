@@ -12,7 +12,7 @@ const Navigation = ({ user, onLogout }) => {
         if (!user || !user.token) return;
         try {
             const config = { headers: { 'x-auth-token': user.token } };
-            const res = await axios.get('http://localhost:5000/api/notifications', config);
+            const res = await axios.get('/api/notifications', config);
             setNotifications(res.data);
             setUnreadCount(res.data.filter(n => !n.is_read).length);
         } catch (err) {
@@ -30,7 +30,7 @@ const Navigation = ({ user, onLogout }) => {
     const handleMarkAllRead = async () => {
         try {
             const config = { headers: { 'x-auth-token': user.token } };
-            await axios.put('http://localhost:5000/api/notifications/mark-all/read', {}, config);
+            await axios.put('/api/notifications/mark-all/read', {}, config);
             fetchNotifications();
         } catch (err) {
             console.error('Error marking all as read:', err);
@@ -95,6 +95,10 @@ const Navigation = ({ user, onLogout }) => {
                                     </Dropdown.Menu>
                                 </Dropdown>
 
+                                <Nav.Link as={Link} to="/profile" className="ms-3">
+                                    <span style={{ fontSize: '1.2rem' }}>👤</span> Profile
+                                </Nav.Link>
+
                                 <Button variant="outline-light" onClick={handleLogout} className="ms-3">Logout</Button>
                             </>
                         )}
@@ -106,3 +110,4 @@ const Navigation = ({ user, onLogout }) => {
 };
 
 export default Navigation;
+

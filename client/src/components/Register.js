@@ -24,7 +24,7 @@ const Register = () => {
     useEffect(() => {
         const fetchDepartments = async () => {
             try {
-                const res = await axios.get('http://localhost:5000/api/departments');
+                const res = await axios.get('/api/departments');
                 setDepartments(res.data);
             } catch (err) {
                 console.error(err);
@@ -37,7 +37,7 @@ const Register = () => {
         const fetchSubDepartments = async () => {
             if (department_id) {
                 try {
-                    const res = await axios.get(`http://localhost:5000/api/departments/sub?department_id=${department_id}`);
+                    const res = await axios.get(`/api/departments/sub?department_id=${department_id}`);
                     setSubDepartments(res.data);
                 } catch (err) {
                     console.error(err);
@@ -69,7 +69,7 @@ const Register = () => {
                 role: (manager_level === 'board' || manager_level === 'md' || manager_level === 'operation' || manager_level === 'department' || manager_level === 'sub_department') ? 'manager' : (manager_level === 'driver_role' ? 'driver' : 'employee'),
                 manager_level: manager_level === 'driver_role' ? 'none' : manager_level
             };
-            await axios.post('http://localhost:5000/api/auth/register', dataToSubmit);
+            await axios.post('/api/auth/register', dataToSubmit);
             navigate('/login');
         } catch (err) {
             setError(err.response?.data?.message || 'Registration failed');
@@ -166,3 +166,4 @@ const Register = () => {
 };
 
 export default Register;
+

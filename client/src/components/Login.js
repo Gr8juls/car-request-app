@@ -17,8 +17,8 @@ const Login = ({ onLogin }) => {
         e.preventDefault();
         setError('');
         try {
-            const res = await axios.post('http://localhost:5000/api/auth/login', formData);
-            onLogin(res.data.token, res.data.role, res.data.department, res.data.manager_level);
+            const res = await axios.post('/api/auth/login', formData);
+            onLogin(res.data.token, res.data.id, res.data.role, res.data.department, res.data.manager_level, res.data.line_manager_id);
         } catch (err) {
             setError(err.response?.data?.message || 'Login failed');
         }
@@ -55,6 +55,9 @@ const Login = ({ onLogin }) => {
                             Login
                         </Button>
                     </Form>
+                    <div className="mt-3 text-center">
+                        <a href="/forgot-password">Forgot Password?</a>
+                    </div>
                 </Card.Body>
             </Card>
         </div>
@@ -62,3 +65,4 @@ const Login = ({ onLogin }) => {
 };
 
 export default Login;
+

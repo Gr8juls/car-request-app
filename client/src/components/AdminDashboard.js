@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Table, Button, Modal, Form, Badge } from 'react-bootstrap';
+import { Table, Button, Modal, Form, Badge, Tabs, Tab, Row, Col, Card } from 'react-bootstrap';
 
 const AdminDashboard = ({ user }) => {
     const [users, setUsers] = useState([]);
+    const [carRequests, setCarRequests] = useState([]);
 
     const config = {
         headers: {
@@ -50,12 +51,22 @@ const AdminDashboard = ({ user }) => {
     useEffect(() => {
         fetchUsers();
         fetchDepartments();
+        fetchCarRequests();
     }, []);
 
     const fetchUsers = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/admin/users', config);
+            const res = await axios.get(`/api/admin/users`, config);
             setUsers(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const fetchCarRequests = async () => {
+        try {
+            const res = await axios.get(`/api/cars`, config);
+            setCarRequests(res.data);
         } catch (err) {
             console.error(err);
         }
@@ -63,7 +74,7 @@ const AdminDashboard = ({ user }) => {
 
     const fetchDepartments = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/departments', config);
+            const res = await axios.get('/api/departments', config);
             setDepartments(res.data);
         } catch (err) {
             console.error(err);
@@ -72,7 +83,7 @@ const AdminDashboard = ({ user }) => {
 
     const fetchSubDepartments = async (deptId) => {
         try {
-            const res = await axios.get(`http://localhost:5000/api/departments/sub?department_id=${deptId}`, config);
+            const res = await axios.get(`/api/departments/sub?department_id=${deptId}`, config);
             setFilteredSubDepts(res.data);
         } catch (err) {
             console.error(err);
@@ -101,7 +112,7 @@ const AdminDashboard = ({ user }) => {
     const handlePromoteSubmit = async () => {
         if (!selectedUser || !selectedSubDept) return;
         try {
-            await axios.post('http://localhost:5000/api/admin/promote', {
+            await axios.post('/api/admin/promote', {
                 userId: selectedUser.id,
                 subDepartmentId: selectedSubDept
             }, config);
@@ -158,13 +169,13 @@ const AdminDashboard = ({ user }) => {
     };
 
     const handleDeleteUserClick = async (userId) => {
-        if (window.confirm('Are you sure you want to delete this user? This will remove all their records.')) {
+        if (window.confirm('Are you sure you want to deactivate this user?')) {
             try {
-                await axios.delete(`http://localhost:5000/api/admin/users/${userId}`, config);
+                await axios.delete(`/api/admin/users/${userId}`, config);
                 fetchUsers();
             } catch (err) {
                 console.error(err);
-                alert('Failed to delete user');
+                alert('Failed to deactivate user');
             }
         }
     };
@@ -172,7 +183,7 @@ const AdminDashboard = ({ user }) => {
     const handleViewAuditHistory = async (user) => {
         setAuditUser(user);
         try {
-            const res = await axios.get(`http://localhost:5000/api/admin/audit/${user.id}`, config);
+            const res = await axios.get(`/api/admin/audit/${user.id}`, config);
             setAuditLogs(res.data);
             setShowAuditModal(true);
         } catch (err) {
@@ -185,7 +196,7 @@ const AdminDashboard = ({ user }) => {
         const newStatus = !user.is_active;
         if (window.confirm(`Are you sure you want to ${newStatus ? 'activate' : 'deactivate'} this user?`)) {
             try {
-                await axios.put(`http://localhost:5000/api/admin/users/${user.id}`, { ...user, is_active: newStatus }, config);
+                await axios.put(`/api/admin/users/${user.id}`, { ...user, is_active: newStatus }, config);
                 fetchUsers();
             } catch (err) {
                 console.error(err);
@@ -221,9 +232,9 @@ const AdminDashboard = ({ user }) => {
 
         try {
             if (userModalMode === 'add') {
-                await axios.post('http://localhost:5000/api/admin/users', userFormData, config);
+                await axios.post('/api/admin/users', userFormData, config);
             } else {
-                await axios.put(`http://localhost:5000/api/admin/users/${userFormData.id}`, userFormData, config);
+                await axios.put(`/api/admin/users/${userFormData.id}`, userFormData, config);
             }
             setShowUserModal(false);
             fetchUsers();
@@ -241,105 +252,194 @@ const AdminDashboard = ({ user }) => {
     });
 
     return (
-        <div className="container mt-4">
+        <div className="container mt-4 pb-5">
             <div className="d-flex justify-content-between align-items-center mb-3">
                 <h2>Admin Dashboard</h2>
                 <div>
-                    <Button variant="outline-info" className="me-2" onClick={fetchUsers}>Refresh</Button>
+                    <Button variant="outline-info" className="me-2" onClick={() => { fetchUsers(); fetchCarRequests(); }}>Refresh All</Button>
                     <Button variant="success" onClick={handleAddUserClick}>+ Add New User</Button>
                 </div>
             </div>
 
-            <div className="row mb-3 g-2">
-                <div className="col-md-3">
-                    <Form.Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
-                        <option value="">All Roles</option>
-                        <option value="none">Regular Employee</option>
-                        <option value="sub_department">Line Manager</option>
-                        <option value="department">Head of Department</option>
-                        <option value="operation">Operations Manager</option>
-                        <option value="md">Managing Director</option>
-                    </Form.Select>
-                </div>
-                <div className="col-md-3">
-                    <Form.Select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
-                        <option value="">All Departments</option>
-                        {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </Form.Select>
-                </div>
-                <div className="col-md-3">
-                    <Form.Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-                        <option value="">All Statuses</option>
-                        <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                    </Form.Select>
-                </div>
-            </div>
+            {/* KPI Summary Cards */}
+            <Row className="mb-4">
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-primary h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Total Users</h6>
+                            <h2 className="mb-0 text-primary">{users.length}</h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-info h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Total Car Requests</h6>
+                            <h2 className="mb-0 text-info">{carRequests.length}</h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-warning h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Pending Requests</h6>
+                            <h2 className="mb-0 text-warning">
+                                {carRequests.filter(r => !['completed', 'rejected'].includes(r.status)).length}
+                            </h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+                <Col md={3}>
+                    <Card className="text-center shadow-sm border-start border-4 border-success h-100">
+                        <Card.Body>
+                            <h6 className="text-muted text-uppercase small">Completed Trips</h6>
+                            <h2 className="mb-0 text-success">
+                                {carRequests.filter(r => r.status === 'completed').length}
+                            </h2>
+                        </Card.Body>
+                    </Card>
+                </Col>
+            </Row>
 
-            <Table striped bordered hover responsive>
-                <thead>
-                    <tr>
-                        <th>Name / Email</th>
-                        <th>Role / Level</th>
-                        <th>Dept / Sub-Dept</th>
-                        <th>Job Title</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {filteredUsers.map(user => (
-                        <tr key={user.id} className={!user.is_active ? 'table-secondary' : ''}>
-                            <td>
-                                <strong>{user.full_name}</strong><br />
-                                <small className="text-muted">{user.email}</small>
-                            </td>
-                            <td>
-                                {user.role}<br />
-                                <Badge bg={
-                                    user.manager_level === 'md' ? 'danger' :
-                                        user.manager_level === 'operation' ? 'warning' :
-                                            user.manager_level === 'department' ? 'primary' :
-                                                user.manager_level === 'sub_department' ? 'info' : 'secondary'
-                                }>
-                                    {user.manager_level === 'md' ? 'Managing Director' :
-                                        user.manager_level === 'operation' ? 'Ops Manager' :
-                                            user.manager_level === 'department' ? 'HoD' :
-                                                user.manager_level === 'sub_department' ? 'Line Manager' : 'Employee'}
-                                </Badge>
-                            </td>
-                            <td>
-                                {user.department_name || '-'} <br />
-                                <small className="text-muted">{user.sub_department_name}</small>
-                            </td>
-                            <td>{user.job_title || '-'}</td>
-                            <td>
-                                <Badge bg={user.is_active ? 'success' : 'danger'} style={{ cursor: 'pointer' }} onClick={() => handleStatusToggle(user)}>
-                                    {user.is_active ? 'Active' : 'Inactive'}
-                                </Badge>
-                            </td>
-                            <td>
-                                <Button variant="outline-primary" size="sm" className="me-2 mb-1" onClick={() => handleEditUserClick(user)}>
-                                    Edit
-                                </Button>
-                                <Button variant="outline-info" size="sm" className="me-2 mb-1" onClick={() => handleViewAuditHistory(user)}>
-                                    History
-                                </Button>
-                                {user.role !== 'admin' && (
-                                    <>
-                                        <Button variant="outline-success" size="sm" className="me-2 mb-1" onClick={() => handlePromoteClick(user)}>
-                                            Allocate LM
-                                        </Button>
-                                        <Button variant="outline-danger" size="sm" className="mb-1" onClick={() => handleDeleteUserClick(user.id)}>
-                                            Delete
-                                        </Button>
-                                    </>
+            <Tabs defaultActiveKey="users" className="mb-4 custom-tabs">
+                <Tab eventKey="users" title="Manage Users">
+                    <Card className="shadow-sm border-0 mt-3 p-3">
+                        <div className="row mb-3 g-2">
+                            <div className="col-md-3">
+                                <Form.Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
+                                    <option value="">All Roles</option>
+                                    <option value="none">Regular Employee</option>
+                                    <option value="sub_department">Line Manager</option>
+                                    <option value="department">Head of Department</option>
+                                    <option value="operation">Operations Manager</option>
+                                    <option value="md">Managing Director</option>
+                                </Form.Select>
+                            </div>
+                            <div className="col-md-3">
+                                <Form.Select value={deptFilter} onChange={(e) => setDeptFilter(e.target.value)}>
+                                    <option value="">All Departments</option>
+                                    {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                                </Form.Select>
+                            </div>
+                            <div className="col-md-3">
+                                <Form.Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+                                    <option value="">All Statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                </Form.Select>
+                            </div>
+                        </div>
+
+                        <Table striped bordered hover responsive>
+                            <thead>
+                                <tr>
+                                    <th>Name / Email</th>
+                                    <th>Role / Level</th>
+                                    <th>Dept / Sub-Dept</th>
+                                    <th>Job Title</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filteredUsers.map(user => (
+                                    <tr key={user.id} className={!user.is_active ? 'table-secondary' : ''}>
+                                        <td>
+                                            <strong>{user.full_name}</strong><br />
+                                            <small className="text-muted">{user.email}</small>
+                                        </td>
+                                        <td>
+                                            {user.role}<br />
+                                            <Badge bg={
+                                                user.manager_level === 'md' ? 'danger' :
+                                                    user.manager_level === 'operation' ? 'warning' :
+                                                        user.manager_level === 'department' ? 'primary' :
+                                                            user.manager_level === 'sub_department' ? 'info' : 'secondary'
+                                            }>
+                                                {user.manager_level === 'md' ? 'Managing Director' :
+                                                    user.manager_level === 'operation' ? 'Ops Manager' :
+                                                        user.manager_level === 'department' ? 'HoD' :
+                                                            user.manager_level === 'sub_department' ? 'Line Manager' : 'Employee'}
+                                            </Badge>
+                                        </td>
+                                        <td>
+                                            {user.department_name || '-'} <br />
+                                            <small className="text-muted">{user.sub_department_name}</small>
+                                        </td>
+                                        <td>{user.job_title || '-'}</td>
+                                        <td>
+                                            <Badge bg={user.is_active ? 'success' : 'danger'} style={{ cursor: 'pointer' }} onClick={() => handleStatusToggle(user)}>
+                                                {user.is_active ? 'Active' : 'Inactive'}
+                                            </Badge>
+                                        </td>
+                                        <td>
+                                            <Button variant="outline-primary" size="sm" className="me-2 mb-1" onClick={() => handleEditUserClick(user)}>
+                                                Edit
+                                            </Button>
+                                            <Button variant="outline-info" size="sm" className="me-2 mb-1" onClick={() => handleViewAuditHistory(user)}>
+                                                History
+                                            </Button>
+                                            {user.role !== 'admin' && (
+                                                <>
+                                                    <Button variant="outline-success" size="sm" className="me-2 mb-1" onClick={() => handlePromoteClick(user)}>
+                                                        Allocate LM
+                                                    </Button>
+                                                    <Button variant="outline-danger" size="sm" className="mb-1" onClick={() => handleDeleteUserClick(user.id)}>
+                                                        Deactivate
+                                                    </Button>
+                                                </>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </Table>
+                    </Card>
+                </Tab>
+
+                <Tab eventKey="requests" title="All Car Requests">
+                    <Card className="shadow-sm border-0 mt-3 p-3">
+                        <Table striped hover responsive>
+                            <thead style={{ backgroundColor: '#009639', color: 'white' }}>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Date</th>
+                                    <th>User</th>
+                                    <th>Vehicle Model</th>
+                                    <th>Destination</th>
+                                    <th>Allocated Reg</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {carRequests.map(req => (
+                                    <tr key={req.id}>
+                                        <td>{req.id}</td>
+                                        <td>{new Date(req.created_at).toLocaleDateString()}</td>
+                                        <td>{req.full_name}</td>
+                                        <td>{req.car_model}</td>
+                                        <td>{req.location}</td>
+                                        <td>{req.reg_no || <span className="text-muted">N/A</span>}</td>
+                                        <td>
+                                            <Badge bg={
+                                                req.status === 'completed' ? 'secondary' :
+                                                    req.status === 'rejected' ? 'danger' :
+                                                        req.status === 'in_progress' ? 'warning' :
+                                                            req.status === 'approved_by_hc' ? 'success' : 'info'
+                                            }>
+                                                {req.status}
+                                            </Badge>
+                                        </td>
+                                    </tr>
+                                ))}
+                                {carRequests.length === 0 && (
+                                    <tr><td colSpan="7" className="text-center py-4">No car requests found.</td></tr>
                                 )}
-                            </td>
-                        </tr>
-                    ))}
-                </tbody>
-            </Table>
+                            </tbody>
+                        </Table>
+                    </Card>
+                </Tab>
+            </Tabs>
 
             {/* Promote / Allocate Manager Modal */}
             <Modal show={showPromoteModal} onHide={() => setShowPromoteModal(false)}>
@@ -505,3 +605,4 @@ const AdminDashboard = ({ user }) => {
 };
 
 export default AdminDashboard;
+
