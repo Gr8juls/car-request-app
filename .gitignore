@@ -1,47 +1,6 @@
-# Dependencies
-node_modules/
 
 # Environment variables (sensitive)
 .env
 .env.local
 .env.*.local
 
-# Logs
-*.log
-npm-debug.log*
-
-# Build output
-dist/
-build/
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE settings
-.vscode/
-.idea/
-
-# Dev/debug scripts (server utility scripts not needed in production)
-server/add-*.js
-server/check-*.js
-server/cleanup-*.js
-server/create-*.js
-server/debug-*.js
-server/diagnose-*.js
-server/emergency-*.js
-server/find-*.js
-server/fix-*.js
-server/get-*.js
-server/list-*.js
-server/migrate-*.js
-server/setup-*.js
-server/setup-shared-view-test.js
-server/switch-*.js
-server/test-*.js
-server/update-approval-terminology.js
-server/verify-*.js
-
-# Root-level dev scripts
-fix-urls.js
-restart-and-test.bat
