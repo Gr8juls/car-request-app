@@ -8,6 +8,7 @@ const WORKFLOWS = {
     },
     sub_department: {
         steps: [
+            { status: 'pending', approver_level: 'department', next_status: 'approved_by_dept_head' },
             { status: 'approved_by_line_manager', approver_level: 'department', next_status: 'approved_by_dept_head' },
             { status: 'approved_by_dept_head', approver_level: 'hc', next_status: 'approved_by_hc' }
         ]
