@@ -16,7 +16,7 @@ import Profile from './components/Profile';
 import DriverDashboard from './components/DriverDashboard';
 import Dashboard from './components/Dashboard';
 import ForgotPassword from './components/ForgotPassword';
-import ResetPassword from './components/ResetPassword';
+
 
 function App() {
     const [user, setUser] = useState(null);
@@ -144,7 +144,7 @@ function App() {
                         <Route path="/admin-dashboard" element={user && user.role === 'admin' ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/driver-dashboard" element={user && user.role === 'driver' ? <DriverDashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/forgot-password" element={<ForgotPassword />} />
-                        <Route path="/reset-password/:token" element={<ResetPassword />} />
+
 
                         <Route path="/" element={<Navigate to={user ? ((user.role === 'hc' || user.department === 'Human Capital') ? "/hc-dashboard" : (user.role === 'driver' ? "/driver-dashboard" : "/dashboard")) : "/login"} />} />
                     </Routes>
