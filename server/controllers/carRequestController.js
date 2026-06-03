@@ -346,8 +346,16 @@ exports.updateStatus = async (req, res) => {
                 );
             }
         } else {
-            const trimmedLevel = (currentRequest.requester_manager_level || 'none').trim();
-            let nextStep = approvalMatrix.getNextStep(trimmedLevel, currentStatus);
+            const isHC = req.user.role === 'hc' || req.user.department_name === 'Human Capital';
+
+            if (isHC && status === 'approved_by_hc') {
+                updateQuery = 'UPDATE car_requests SET status = ?';
+                params = [status];
+                updateQuery += ', hr_comment = ?, driver_allocated = ?, assigned_driver_id = ?, vehicle_allocated = ?, reg_no = ?, assigned_to = NULL WHERE id = ?';
+                params.push(comment, driver_allocated, req.body.assigned_driver_id || null, vehicle_allocated, reg_no, requestId);
+            } else {
+                const trimmedLevel = (currentRequest.requester_manager_level || 'none').trim();
+                let nextStep = approvalMatrix.getNextStep(trimmedLevel, currentStatus);
 
             console.log('[MD APPROVAL DEBUG] Initial state:', {
                 trimmedLevel,
@@ -452,6 +460,7 @@ exports.updateStatus = async (req, res) => {
                     );
                 }
             }
+        }
         }
 
         await db.query(updateQuery, params);

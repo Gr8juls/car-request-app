@@ -66,8 +66,8 @@ const Register = () => {
         try {
             const dataToSubmit = {
                 ...formData,
-                role: (manager_level === 'board' || manager_level === 'md' || manager_level === 'operation' || manager_level === 'department' || manager_level === 'sub_department') ? 'manager' : (manager_level === 'driver_role' ? 'driver' : 'employee'),
-                manager_level: manager_level === 'driver_role' ? 'none' : manager_level
+                role: (manager_level === 'board' || manager_level === 'md' || manager_level === 'operation' || manager_level === 'department' || manager_level === 'sub_department') ? 'manager' : 'employee',
+                manager_level: manager_level
             };
             await axios.post('/api/auth/register', dataToSubmit);
             navigate('/login');
@@ -123,7 +123,7 @@ const Register = () => {
                                 <option value="operation">Operation Manager</option>
                                 <option value="board">Board Member</option>
                                 <option value="md">Managing Director</option>
-                                <option value="driver_role">Driver</option>
+                                {/* Driver option removed — driver dashboard is deactivated */}
                             </Form.Select>
                         </Form.Group>
 

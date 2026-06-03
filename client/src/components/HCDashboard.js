@@ -12,12 +12,21 @@ const HCDashboard = ({ user }) => {
     const [comment, setComment] = useState('');
     const [viewModal, setViewModal] = useState(false);
     const [requestDetails, setRequestDetails] = useState(null);
+    const [vehicles, setVehicles] = useState([]);
     const [allocation, setAllocation] = useState({
         driver_allocated: '',
         assigned_driver_id: '',
         vehicle_allocated: '',
         reg_no: ''
     });
+
+    // CRUD State for Drivers & Vehicles
+    const [showManageDriverModal, setShowManageDriverModal] = useState(false);
+    const [showManageVehicleModal, setShowManageVehicleModal] = useState(false);
+    const [manageDriverMode, setManageDriverMode] = useState('add');
+    const [manageVehicleMode, setManageVehicleMode] = useState('add');
+    const [driverFormData, setDriverFormData] = useState({ id: '', full_name: '', phone: '' });
+    const [vehicleFormData, setVehicleFormData] = useState({ id: '', vehicle_name: '', reg_no: '' });
 
     // Filters for Report
     const [filters, setFilters] = useState({
@@ -33,12 +42,9 @@ const HCDashboard = ({ user }) => {
         try {
             const config = { headers: { 'x-auth-token': user.token } };
             const res = await axios.get('/api/cars', config);
-            // Filter requests pending HC action based on requester level
+            // Show all requests that are not completed or rejected so HC can override.
             setRequests(res.data.filter(r =>
-                (r.requester_manager_level === 'none' && r.status === 'approved_by_line_manager') ||
-                (r.requester_manager_level === 'sub_department' && r.status === 'approved_by_dept_head') ||
-                (r.requester_manager_level === 'department' && r.status === 'approved_by_ops_manager') ||
-                (['operation', 'board', 'md'].includes(r.requester_manager_level) && r.status === 'approved_by_md')
+                !['approved_by_hc', 'completed', 'rejected'].includes(r.status)
             ));
         } catch (err) {
             console.error(err);
@@ -63,10 +69,19 @@ const HCDashboard = ({ user }) => {
 
     const fetchDrivers = async () => {
         try {
-            // Fetch only drivers using the dedicated carRequests endpoint
             const config = { headers: { 'x-auth-token': user.token } };
-            const res = await axios.get('/api/cars/drivers', config);
+            const res = await axios.get('/api/drivers_management', config);
             setDrivers(res.data);
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    const fetchVehicles = async () => {
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            const res = await axios.get('/api/vehicles', config);
+            setVehicles(res.data);
         } catch (err) {
             console.error(err);
         }
@@ -116,6 +131,7 @@ const HCDashboard = ({ user }) => {
         fetchRequests();
         fetchReport();
         fetchDrivers();
+        fetchVehicles();
     }, [user.token, filters]);
 
     const handleAction = (request, act) => {
@@ -157,6 +173,62 @@ const HCDashboard = ({ user }) => {
         }
     };
 
+    // --- Driver CRUD Handlers ---
+    const handleDriverSubmit = async () => {
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            if (manageDriverMode === 'add') {
+                await axios.post('/api/drivers_management', driverFormData, config);
+            } else {
+                await axios.put(`/api/drivers_management/${driverFormData.id}`, driverFormData, config);
+            }
+            setShowManageDriverModal(false);
+            fetchDrivers();
+        } catch (err) {
+            console.error(err);
+            alert('Operation failed');
+        }
+    };
+
+    const handleDeleteDriver = async (id) => {
+        if (!window.confirm('Delete this driver?')) return;
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.delete(`/api/drivers_management/${id}`, config);
+            fetchDrivers();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
+    // --- Vehicle CRUD Handlers ---
+    const handleVehicleSubmit = async () => {
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            if (manageVehicleMode === 'add') {
+                await axios.post('/api/vehicles', vehicleFormData, config);
+            } else {
+                await axios.put(`/api/vehicles/${vehicleFormData.id}`, vehicleFormData, config);
+            }
+            setShowManageVehicleModal(false);
+            fetchVehicles();
+        } catch (err) {
+            console.error(err);
+            alert(err.response?.data?.message || 'Operation failed');
+        }
+    };
+
+    const handleDeleteVehicle = async (id) => {
+        if (!window.confirm('Delete this vehicle?')) return;
+        try {
+            const config = { headers: { 'x-auth-token': user.token } };
+            await axios.delete(`/api/vehicles/${id}`, config);
+            fetchVehicles();
+        } catch (err) {
+            console.error(err);
+        }
+    };
+
     const getStatusBadge = (status) => {
         switch (status) {
             case 'approved_by_hc': return <Badge bg="success">HC Approved & Allocated</Badge>;
@@ -189,35 +261,25 @@ const HCDashboard = ({ user }) => {
 
             {/* KPI Summary Cards */}
             <Row className="mb-4">
-                <Col md={3}>
+                <Col md={4}>
                     <Card className="text-center shadow-sm border-start border-4 border-warning h-100">
                         <Card.Body>
-                            <h6 className="text-muted text-uppercase small">Pending My Approval</h6>
+                            <h6 className="text-muted text-uppercase small">Pending Approvals</h6>
                             <h2 className="mb-0 text-warning">{requests.length}</h2>
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={3}>
-                    <Card className="text-center shadow-sm border-start border-4 border-success h-100">
-                        <Card.Body>
-                            <h6 className="text-muted text-uppercase small">Active alloc. / In Progress</h6>
-                            <h2 className="mb-0 text-success">
-                                {reportData.filter(r => ['approved_by_hc', 'in_progress'].includes(r.status)).length}
-                            </h2>
-                        </Card.Body>
-                    </Card>
-                </Col>
-                <Col md={3}>
+                <Col md={4}>
                     <Card className="text-center shadow-sm border-start border-4 border-dark h-100">
                         <Card.Body>
-                            <h6 className="text-muted text-uppercase small">Completed Trips</h6>
+                            <h6 className="text-muted text-uppercase small">Completed / Allocated Trips</h6>
                             <h2 className="mb-0 text-dark">
-                                {reportData.filter(r => r.status === 'completed').length}
+                                {reportData.filter(r => ['completed', 'approved_by_hc'].includes(r.status)).length}
                             </h2>
                         </Card.Body>
                     </Card>
                 </Col>
-                <Col md={3}>
+                <Col md={4}>
                     <Card className="text-center shadow-sm border-start border-4 border-danger h-100">
                         <Card.Body>
                             <h6 className="text-muted text-uppercase small">Rejected Requests</h6>
@@ -230,7 +292,7 @@ const HCDashboard = ({ user }) => {
             </Row>
 
             <Tabs defaultActiveKey="active" className="mb-4 custom-tabs">
-                <Tab eventKey="active" title="Pending My Approval">
+                <Tab eventKey="active" title="Pending Approvals">
                     <Card className="shadow-sm border-0">
                         <Card.Body>
                             <Table striped hover responsive className="bg-white">
@@ -415,6 +477,87 @@ const HCDashboard = ({ user }) => {
                         </Card.Body>
                     </Card>
                 </Tab>
+
+                <Tab eventKey="manage" title="Manage Drivers & Vehicles">
+                    <Card className="shadow-sm border-0">
+                        <Card.Body>
+                            <Row>
+                                <Col md={6}>
+                                    <div className="d-flex justify-content-between align-items-center mb-3">
+                                        <h5>Drivers</h5>
+                                        <Button variant="success" size="sm" onClick={() => {
+                                            setManageDriverMode('add');
+                                            setDriverFormData({ id: '', full_name: '', phone: '' });
+                                            setShowManageDriverModal(true);
+                                        }}>+ Add Driver</Button>
+                                    </div>
+                                    <Table striped hover responsive size="sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Name</th>
+                                                <th>Phone</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {drivers.map(d => (
+                                                <tr key={d.id}>
+                                                    <td>{d.full_name}</td>
+                                                    <td>{d.phone || '-'}</td>
+                                                    <td>
+                                                        <Button variant="outline-primary" size="sm" className="me-2" onClick={() => {
+                                                            setManageDriverMode('edit');
+                                                            setDriverFormData(d);
+                                                            setShowManageDriverModal(true);
+                                                        }}>Edit</Button>
+                                                        <Button variant="outline-danger" size="sm" onClick={() => handleDeleteDriver(d.id)}>Delete</Button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {drivers.length === 0 && <tr><td colSpan="3" className="text-center">No drivers found.</td></tr>}
+                                        </tbody>
+                                    </Table>
+                                </Col>
+                                <Col md={6}>
+                                    <div className="d-flex justify-content-between align-items-center mb-3">
+                                        <h5>Vehicles</h5>
+                                        <Button variant="success" size="sm" onClick={() => {
+                                            setManageVehicleMode('add');
+                                            setVehicleFormData({ id: '', vehicle_name: '', reg_no: '' });
+                                            setShowManageVehicleModal(true);
+                                        }}>+ Add Vehicle</Button>
+                                    </div>
+                                    <Table striped hover responsive size="sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Vehicle Name</th>
+                                                <th>Reg No</th>
+                                                <th>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {vehicles.map(v => (
+                                                <tr key={v.id}>
+                                                    <td>{v.vehicle_name}</td>
+                                                    <td>{v.reg_no}</td>
+                                                    <td>
+                                                        <Button variant="outline-primary" size="sm" className="me-2" onClick={() => {
+                                                            setManageVehicleMode('edit');
+                                                            setVehicleFormData(v);
+                                                            setShowManageVehicleModal(true);
+                                                        }}>Edit</Button>
+                                                        <Button variant="outline-danger" size="sm" onClick={() => handleDeleteVehicle(v.id)}>Delete</Button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {vehicles.length === 0 && <tr><td colSpan="3" className="text-center">No vehicles found.</td></tr>}
+                                        </tbody>
+                                    </Table>
+                                </Col>
+                            </Row>
+                        </Card.Body>
+                    </Card>
+                </Tab>
             </Tabs>
 
             <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
@@ -447,12 +590,26 @@ const HCDashboard = ({ user }) => {
                                 </Col>
                                 <Col md={6}>
                                     <Form.Label>Vehicle Allocated</Form.Label>
-                                    <Form.Control
-                                        type="text"
-                                        value={allocation.vehicle_allocated}
-                                        onChange={(e) => setAllocation({ ...allocation, vehicle_allocated: e.target.value })}
-                                        placeholder="Enter vehicle model"
-                                    />
+                                    <Form.Select
+                                        value={vehicles.find(v => v.reg_no === allocation.reg_no)?.id || ''}
+                                        onChange={(e) => {
+                                            const v = vehicles.find(veh => veh.id === parseInt(e.target.value));
+                                            if (v) {
+                                                setAllocation({
+                                                    ...allocation,
+                                                    vehicle_allocated: v.vehicle_name,
+                                                    reg_no: v.reg_no
+                                                });
+                                            } else {
+                                                setAllocation({ ...allocation, vehicle_allocated: '', reg_no: '' });
+                                            }
+                                        }}
+                                    >
+                                        <option value="">Select Vehicle</option>
+                                        {vehicles.map(v => (
+                                            <option key={v.id} value={v.id}>{v.vehicle_name} - {v.reg_no}</option>
+                                        ))}
+                                    </Form.Select>
                                 </Col>
                             </Row>
                             <Row className="mb-3">
@@ -461,8 +618,8 @@ const HCDashboard = ({ user }) => {
                                     <Form.Control
                                         type="text"
                                         value={allocation.reg_no}
-                                        onChange={(e) => setAllocation({ ...allocation, reg_no: e.target.value })}
-                                        placeholder="e.g. RAC 123 A"
+                                        disabled
+                                        placeholder="Auto-filled from vehicle selection"
                                     />
                                 </Col>
                             </Row>
@@ -569,6 +726,48 @@ const HCDashboard = ({ user }) => {
                 </Modal.Body>
                 <Modal.Footer>
                     <Button variant="secondary" onClick={() => setViewModal(false)}>Close</Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Manage Driver Modal */}
+            <Modal show={showManageDriverModal} onHide={() => setShowManageDriverModal(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title>{manageDriverMode === 'add' ? 'Add Driver' : 'Edit Driver'}</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Form.Group className="mb-3">
+                        <Form.Label>Full Name</Form.Label>
+                        <Form.Control type="text" value={driverFormData.full_name} onChange={e => setDriverFormData({ ...driverFormData, full_name: e.target.value })} />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                        <Form.Label>Phone</Form.Label>
+                        <Form.Control type="text" value={driverFormData.phone} onChange={e => setDriverFormData({ ...driverFormData, phone: e.target.value })} />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowManageDriverModal(false)}>Cancel</Button>
+                    <Button variant="primary" onClick={handleDriverSubmit}>Save</Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Manage Vehicle Modal */}
+            <Modal show={showManageVehicleModal} onHide={() => setShowManageVehicleModal(false)}>
+                <Modal.Header closeButton>
+                    <Modal.Title>{manageVehicleMode === 'add' ? 'Add Vehicle' : 'Edit Vehicle'}</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <Form.Group className="mb-3">
+                        <Form.Label>Vehicle Name/Model</Form.Label>
+                        <Form.Control type="text" value={vehicleFormData.vehicle_name} onChange={e => setVehicleFormData({ ...vehicleFormData, vehicle_name: e.target.value })} />
+                    </Form.Group>
+                    <Form.Group className="mb-3">
+                        <Form.Label>Registration Number</Form.Label>
+                        <Form.Control type="text" value={vehicleFormData.reg_no} onChange={e => setVehicleFormData({ ...vehicleFormData, reg_no: e.target.value })} />
+                    </Form.Group>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowManageVehicleModal(false)}>Cancel</Button>
+                    <Button variant="primary" onClick={handleVehicleSubmit}>Save</Button>
                 </Modal.Footer>
             </Modal>
         </div>
