@@ -13,7 +13,7 @@ import Register from './components/Register';
 import Profile from './components/Profile';
 
 
-import DriverDashboard from './components/DriverDashboard';
+// DriverDashboard deactivated
 import Dashboard from './components/Dashboard';
 import ForgotPassword from './components/ForgotPassword';
 
@@ -124,7 +124,7 @@ function App() {
     const getDashboard = () => {
         if (!user) return <Navigate to="/login" />;
         if (user.role === 'admin') return <Navigate to="/admin-dashboard" />;
-        if (user.role === 'driver') return <Navigate to="/driver-dashboard" />;
+        // Driver dashboard deactivated — drivers fall through to the standard Dashboard
         if (user.role === 'hc' || user.department === 'Human Capital') return <Navigate to="/hc-dashboard" />;
         return <Dashboard user={user} />;
     };
@@ -142,11 +142,11 @@ function App() {
                         <Route path="/dashboard" element={user ? <Dashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/hc-dashboard" element={user && (user.role === 'hc' || user.department === 'Human Capital') ? <HCDashboard user={user} /> : <Navigate to="/login" />} />
                         <Route path="/admin-dashboard" element={user && user.role === 'admin' ? <AdminDashboard user={user} /> : <Navigate to="/login" />} />
-                        <Route path="/driver-dashboard" element={user && user.role === 'driver' ? <DriverDashboard user={user} /> : <Navigate to="/login" />} />
+                        {/* /driver-dashboard route deactivated */}
                         <Route path="/forgot-password" element={<ForgotPassword />} />
 
 
-                        <Route path="/" element={<Navigate to={user ? ((user.role === 'hc' || user.department === 'Human Capital') ? "/hc-dashboard" : (user.role === 'driver' ? "/driver-dashboard" : "/dashboard")) : "/login"} />} />
+                        <Route path="/" element={<Navigate to={user ? ((user.role === 'hc' || user.department === 'Human Capital') ? "/hc-dashboard" : "/dashboard") : "/login"} />} />
                     </Routes>
                 </div>
             </div>
