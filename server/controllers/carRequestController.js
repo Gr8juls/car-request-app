@@ -297,7 +297,7 @@ exports.updateStatus = async (req, res) => {
     try {
         // Fetch current request and requester details
         const [requestRows] = await db.query(`
-            SELECT r.id, r.status, r.user_id, r.assigned_to, u.department_id, u.sub_department_id, u.manager_level as requester_manager_level
+            SELECT r.id, r.status, r.user_id, r.assigned_to, r.car_model, u.full_name, u.department_id, u.sub_department_id, u.manager_level as requester_manager_level
             FROM car_requests r 
             JOIN users u ON r.user_id = u.id 
             WHERE r.id = ?
@@ -349,10 +349,23 @@ exports.updateStatus = async (req, res) => {
             const isHC = req.user.role === 'hc' || req.user.department_name === 'Human Capital';
 
             if (isHC && status === 'approved_by_hc') {
+                // Resolve assigned_driver_id: the client sends the ID from the 'drivers' table,
+                // but car_requests.assigned_driver_id should store the user ID from the 'users' table
+                // for trip auth (startTrip/completeTrip) and driver notifications.
+                let resolvedDriverUserId = null;
+                if (driver_allocated) {
+                    const [driverUserLookup] = await db.query(
+                        "SELECT id FROM users WHERE full_name = ? AND role = 'driver' LIMIT 1",
+                        [driver_allocated]
+                    );
+                    if (driverUserLookup.length > 0) {
+                        resolvedDriverUserId = driverUserLookup[0].id;
+                    }
+                }
                 updateQuery = 'UPDATE car_requests SET status = ?';
                 params = [status];
                 updateQuery += ', hr_comment = ?, driver_allocated = ?, assigned_driver_id = ?, vehicle_allocated = ?, reg_no = ?, assigned_to = NULL WHERE id = ?';
-                params.push(comment, driver_allocated, req.body.assigned_driver_id || null, vehicle_allocated, reg_no, requestId);
+                params.push(comment, driver_allocated, resolvedDriverUserId, vehicle_allocated, reg_no, requestId);
             } else {
                 const trimmedLevel = (currentRequest.requester_manager_level || 'none').trim();
                 let nextStep = approvalMatrix.getNextStep(trimmedLevel, currentStatus);
@@ -411,10 +424,21 @@ exports.updateStatus = async (req, res) => {
                     return res.status(403).json({ message: 'Only Human Capital can perform this final approval.' });
                 }
 
+                // Resolve assigned_driver_id to the users table ID (not drivers table ID)
+                let resolvedDriverUserId = null;
+                if (driver_allocated) {
+                    const [driverUserLookup] = await db.query(
+                        "SELECT id FROM users WHERE full_name = ? AND role = 'driver' LIMIT 1",
+                        [driver_allocated]
+                    );
+                    if (driverUserLookup.length > 0) {
+                        resolvedDriverUserId = driverUserLookup[0].id;
+                    }
+                }
                 updateQuery = 'UPDATE car_requests SET status = ?';
                 params = [status];
                 updateQuery += ', hr_comment = ?, driver_allocated = ?, assigned_driver_id = ?, vehicle_allocated = ?, reg_no = ?, assigned_to = NULL WHERE id = ?';
-                params.push(comment, driver_allocated, req.body.assigned_driver_id || null, vehicle_allocated, reg_no, requestId);
+                params.push(comment, driver_allocated, resolvedDriverUserId, vehicle_allocated, reg_no, requestId);
             } else {
                 console.log('[MD APPROVAL DEBUG] Approver level is NOT HC, proceeding with manager approval');
                 if (currentRequest.assigned_to !== req.user.id) {
@@ -481,14 +505,23 @@ exports.updateStatus = async (req, res) => {
                 [currentRequest.user_id, requestId, requesterMsg]
             );
 
-            // 2. Notify Driver (if assigned_driver_id is provided)
+            // 2. Notify Driver (if assigned_driver_id is provided) — look up driver's user account by name
             const assigned_driver_id = req.body.assigned_driver_id;
-            if (assigned_driver_id) {
-                const driverMsg = `New Trip Assignment: You have been assigned to trip #${requestId} (${currentRequest.car_model}) for ${currentRequest.full_name || 'User'}.`;
-                await db.query(
-                    'INSERT INTO notifications (user_id, request_id, message) VALUES (?, ?, ?)',
-                    [assigned_driver_id, requestId, driverMsg]
+            if (assigned_driver_id && driver_allocated) {
+                // assigned_driver_id references the 'drivers' table, not 'users'.
+                // We need to find the matching user in 'users' table by name to send a notification.
+                const [driverUserRows] = await db.query(
+                    "SELECT id FROM users WHERE full_name = ? AND role = 'driver' LIMIT 1",
+                    [driver_allocated]
                 );
+                if (driverUserRows.length > 0) {
+                    const driverUserId = driverUserRows[0].id;
+                    const driverMsg = `New Trip Assignment: You have been assigned to trip #${requestId} (${currentRequest.car_model}) for ${currentRequest.full_name || 'User'}.`;
+                    await db.query(
+                        'INSERT INTO notifications (user_id, request_id, message) VALUES (?, ?, ?)',
+                        [driverUserId, requestId, driverMsg]
+                    );
+                }
             }
         }
         // --- End Notification Logic ---
